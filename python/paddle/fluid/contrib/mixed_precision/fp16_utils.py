@@ -68,6 +68,11 @@ def _insert_cast_op(block, op, idx, src_dtype, dest_dtype):
         core.VarDesc.VarType.LOD_TENSOR_ARRAY
     ]
 
+    op_device_key = core.op_proto_and_checker_maker.kOpDeviceAttrName()
+    assert block.ops[idx] == op
+    prev_op = block.ops[idx - 1]
+    prev_op_device = prev_op.attr(op_device_key)
+
     for in_name in op.input_names:
         if src_dtype == core.VarDesc.VarType.FP32 and op.type == 'batch_norm':
             if in_name != 'X':
@@ -93,7 +98,8 @@ def _insert_cast_op(block, op, idx, src_dtype, dest_dtype):
                         outputs={"Out": out_var},
                         attrs={
                             "in_dtype": in_var.dtype,
-                            "out_dtype": out_var.dtype
+                            "out_dtype": out_var.dtype,
+                            op_device_key: prev_op_device
                         })
                     num_cast_ops += 1
                 _rename_arg(op, in_var.name, out_var.name)
@@ -358,47 +364,48 @@ def update_loss_scaling(is_overall_finite, prev_loss_scaling, num_good_steps,
         decr_ratio(float): The less-than-one-multiplier to use when decreasing 
                            loss scaling.
     """
-    zero_steps = layers.fill_constant(shape=[1], dtype='int32', value=0)
-    with layers.Switch() as switch:
-        with switch.case(is_overall_finite):
-            should_incr_loss_scaling = layers.less_than(incr_every_n_steps,
-                                                        num_good_steps + 1)
-            with layers.Switch() as switch1:
-                with switch1.case(should_incr_loss_scaling):
-                    new_loss_scaling = prev_loss_scaling * incr_ratio
-                    loss_scaling_is_finite = layers.isfinite(new_loss_scaling)
-                    with layers.Switch() as switch2:
-                        with switch2.case(loss_scaling_is_finite):
-                            layers.assign(new_loss_scaling, prev_loss_scaling)
-                        with switch2.default():
-                            pass
-                    layers.assign(zero_steps, num_good_steps)
-                    layers.assign(zero_steps, num_bad_steps)
+    with device_guard("gpu:0"):
+       zero_steps = layers.fill_constant(shape=[1], dtype='int32', value=0)
+       with layers.Switch() as switch:
+           with switch.case(is_overall_finite):
+               should_incr_loss_scaling = layers.less_than(incr_every_n_steps,
+                                                           num_good_steps + 1)
+               with layers.Switch() as switch1:
+                   with switch1.case(should_incr_loss_scaling):
+                       new_loss_scaling = prev_loss_scaling * incr_ratio
+                       loss_scaling_is_finite = layers.isfinite(new_loss_scaling)
+                       with layers.Switch() as switch2:
+                           with switch2.case(loss_scaling_is_finite):
+                               layers.assign(new_loss_scaling, prev_loss_scaling)
+                           with switch2.default():
+                               pass
+                       layers.assign(zero_steps, num_good_steps)
+                       layers.assign(zero_steps, num_bad_steps)
 
-                with switch1.default():
-                    layers.increment(num_good_steps)
-                    layers.assign(zero_steps, num_bad_steps)
+                   with switch1.default():
+                       layers.increment(num_good_steps)
+                       layers.assign(zero_steps, num_bad_steps)
 
-        with switch.default():
-            should_decr_loss_scaling = layers.less_than(decr_every_n_nan_or_inf,
-                                                        num_bad_steps + 1)
-            with layers.Switch() as switch3:
-                with switch3.case(should_decr_loss_scaling):
-                    new_loss_scaling = prev_loss_scaling * decr_ratio
-                    static_loss_scaling = \
-                        layers.fill_constant(shape=[1],
-                                             dtype='float32',
-                                             value=1.0)
-                    less_than_one = layers.less_than(new_loss_scaling,
-                                                     static_loss_scaling)
-                    with layers.Switch() as switch4:
-                        with switch4.case(less_than_one):
-                            layers.assign(static_loss_scaling,
-                                          prev_loss_scaling)
-                        with switch4.default():
-                            layers.assign(new_loss_scaling, prev_loss_scaling)
-                    layers.assign(zero_steps, num_good_steps)
-                    layers.assign(zero_steps, num_bad_steps)
-                with switch3.default():
-                    layers.assign(zero_steps, num_good_steps)
-                    layers.increment(num_bad_steps)
+           with switch.default():
+               should_decr_loss_scaling = layers.less_than(decr_every_n_nan_or_inf,
+                                                           num_bad_steps + 1)
+               with layers.Switch() as switch3:
+                   with switch3.case(should_decr_loss_scaling):
+                       new_loss_scaling = prev_loss_scaling * decr_ratio
+                       static_loss_scaling = \
+                           layers.fill_constant(shape=[1],
+                                                dtype='float32',
+                                                value=1.0)
+                       less_than_one = layers.less_than(new_loss_scaling,
+                                                        static_loss_scaling)
+                       with layers.Switch() as switch4:
+                           with switch4.case(less_than_one):
+                               layers.assign(static_loss_scaling,
+                                             prev_loss_scaling)
+                           with switch4.default():
+                               layers.assign(new_loss_scaling, prev_loss_scaling)
+                       layers.assign(zero_steps, num_good_steps)
+                       layers.assign(zero_steps, num_bad_steps)
+                   with switch3.default():
+                       layers.assign(zero_steps, num_good_steps)
+                       layers.increment(num_bad_steps)
