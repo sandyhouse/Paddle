@@ -4305,7 +4305,6 @@ class PipelineOptimizer(object):
                         attrs={
                             self._op_device_key: device,
                             self._op_role_key: self._op_role.Backward,
-                            self._op_role_var_key: op_role_var
                         })
                     offset += 1
 
