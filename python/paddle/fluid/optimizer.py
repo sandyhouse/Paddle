@@ -4616,9 +4616,9 @@ class PipelineOptimizer(object):
 
                 if var_name not in input_var_to_device:
                     input_var_to_device[var_name] = []
-                if cur_device in input_var_to_device[var_name]:
+                if (cur_device, prev_device) in input_var_to_device[var_name]:
                     continue
-                input_var_to_device[var_name].append(cur_device)
+                input_var_to_device[var_name].append((cur_device, prev_device))
 
                 op_role = op.all_attrs()[self._op_role_key]
                 var = block.vars[var_name]
