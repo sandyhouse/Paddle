@@ -65,8 +65,14 @@ class CollectiveHelper(object):
                 self.role_maker._worker_index(), ring_id, self.wait_port)
         self._broadcast_params()
 
-    def _init_communicator(self, program, current_endpoint, endpoints, rank,
-                           ring_id, wait_port):
+    def _init_communicator(self,
+                           program,
+                           current_endpoint,
+                           endpoints,
+                           rank,
+                           ring_id,
+                           wait_port,
+                           sync=True):
         nranks = len(endpoints)
         other_endpoints = endpoints[:]
         other_endpoints.remove(current_endpoint)
@@ -74,30 +80,89 @@ class CollectiveHelper(object):
             wait_server_ready(other_endpoints)
 
         block = program.global_block()
-        nccl_id_var = block.create_var(
-            name=unique_name.generate('nccl_id'),
-            persistable=True,
-            type=core.VarDesc.VarType.RAW)
-        block.append_op(
-            type='c_gen_nccl_id',
-            inputs={},
-            outputs={'Out': nccl_id_var},
-            attrs={
-                'rank': rank,
-                'endpoint': current_endpoint,
-                'other_endpoints': other_endpoints,
-                OP_ROLE_KEY: OpRole.Forward
-            })
-        block.append_op(
-            type='c_comm_init',
-            inputs={'X': nccl_id_var},
-            outputs={},
-            attrs={
-                'nranks': nranks,
-                'rank': rank,
-                'ring_id': ring_id,
-                OP_ROLE_KEY: OpRole.Forward
-            })
+        if core.is_compiled_with_cuda():
+            if not wait_port and sync:
+                temp_var = block.create_var(
+                    name=unique_name.generate('temp_var'),
+                    dtype=core.VarDesc.VarType.INT32,
+                    persistable=False,
+                    stop_gradient=True)
+                block.append_op(
+                    type='fill_constant',
+                    inputs={},
+                    outputs={'Out': [temp_var]},
+                    attrs={
+                        'shape': [1],
+                        'dtype': temp_var.dtype,
+                        'value': 1,
+                        'force_cpu': False,
+                        OP_ROLE_KEY: OpRole.Forward
+                    })
+                block.append_op(
+                    type='c_allreduce_sum',
+                    inputs={'X': [temp_var]},
+                    outputs={'Out': [temp_var]},
+                    attrs={'ring_id': 3,
+                           OP_ROLE_KEY: OpRole.Forward})
+                block.append_op(
+                    type='c_sync_comm_stream',
+                    inputs={'X': temp_var},
+                    outputs={'Out': temp_var},
+                    attrs={'ring_id': 3,
+                           OP_ROLE_KEY: OpRole.Forward})
+            comm_id_var = block.create_var(
+                name=unique_name.generate('nccl_id'),
+                persistable=True,
+                type=core.VarDesc.VarType.RAW)
+            block.append_op(
+                type='c_gen_nccl_id',
+                inputs={},
+                outputs={'Out': comm_id_var},
+                attrs={
+                    'rank': rank,
+                    'endpoint': current_endpoint,
+                    'other_endpoints': other_endpoints,
+                    OP_ROLE_KEY: OpRole.Forward
+                })
+            block.append_op(
+                type='c_comm_init',
+                inputs={'X': comm_id_var},
+                outputs={},
+                attrs={
+                    'nranks': nranks,
+                    'rank': rank,
+                    'ring_id': ring_id,
+                    OP_ROLE_KEY: OpRole.Forward
+                })
+        elif core.is_compiled_with_xpu():
+            comm_id_var = block.create_var(
+                name=unique_name.generate('bkcl_id'),
+                persistable=True,
+                type=core.VarDesc.VarType.RAW)
+            block.append_op(
+                type='c_gen_bkcl_id',
+                inputs={},
+                outputs={'Out': comm_id_var},
+                attrs={
+                    'rank': rank,
+                    'endpoint': current_endpoint,
+                    'other_endpoints': other_endpoints,
+                    OP_ROLE_KEY: OpRole.Forward
+                })
+            block.append_op(
+                type='c_comm_init',
+                inputs={'X': comm_id_var},
+                outputs={},
+                attrs={
+                    'nranks': nranks,
+                    'rank': rank,
+                    'ring_id': ring_id,
+                    OP_ROLE_KEY: OpRole.Forward
+                })
+        else:
+            raise ValueError(
+                "comm_id must be generated in paddlepaddle-xpu or paddlepaddle-xpu."
+            )
 
     def _wait(self, current_endpoint, endpoints):
         assert (self.wait_port)

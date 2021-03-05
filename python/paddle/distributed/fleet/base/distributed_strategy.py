@@ -49,6 +49,9 @@ def assign_configs_value(msg, config):
     for key in config:
         for f in fields:
             if key == f.name:
+                # LABEL_OPTIONAL = 1
+                # LABEL_REPEATED = 3
+                # LABEL_REQUIRED = 2
                 if f.label == 3:
                     getattr(msg, f.name).extend(config[f.name])
                 elif f.label == 1 or f.label == 2:
@@ -366,7 +369,14 @@ class DistributedStrategy(object):
 
             custom_black_list(list[str]): Users' custom black list which forbidden execution fp16.
 
-        Examples:
+            custom_black_varnames(list[str]): Users' custom black varibles' names.
+
+            use_pure_fp16(bool): Whether to use the pure fp16 training. Default False.
+
+            use_fp16_guard(bool): Whether to use `fp16_guard` when constructing the program.
+                   Default True. Only takes effect when `use_pure_fp16` is turned on.
+
+        Examples 1:
 
           .. code-block:: python
 
@@ -376,6 +386,19 @@ class DistributedStrategy(object):
             strategy.amp_configs = {
                 "init_loss_scaling": 32768,
                 "custom_white_list": ['conv2d']}
+
+        Examples 2:
+
+          .. code-block:: python
+
+            import paddle.distributed.fleet as fleet
+            strategy = fleet.DistributedStrategy()
+            strategy.amp = True
+            # pure fp16
+            strategy.amp_configs = {
+                "init_loss_scaling": 32768,
+                "use_pure_fp16": True
+            }
         """
         return get_msg_dict(self.strategy.amp_configs)
 
@@ -739,7 +762,7 @@ class DistributedStrategy(object):
     @property
     def model_parallel(self):
         """
-        Indicating whether we are using model_parallel parallelism for distributed training.
+        Indicating whether we are using model parallel parallelism for distributed training.
 
         Examples:
 
@@ -763,13 +786,11 @@ class DistributedStrategy(object):
     @property
     def model_parallel_configs(self):
         """
-        Set model parallel configurations. It configures how many devices
-        are used in a model parallel group.
+        Set model_parallel parallelism configurations.
 
         **Notes**:
             **Detailed arguments for model_parallel_configs**
-
-            **parallelism**: number of devices are used in a model parallel group.
+            **parallelism**: degree of model parallel
 
         Examples:
 
@@ -778,8 +799,7 @@ class DistributedStrategy(object):
             import paddle.distributed.fleet as fleet
             strategy = fleet.DistributedStrategy()
             strategy.model_parallel = True
-            strategy.model_parallel_configs = {"parallelism": 8}
-
+            strategy.model_parallel_configs = {"parallelism": 12}
         """
 
         return get_msg_dict(self.strategy.model_parallel_configs)

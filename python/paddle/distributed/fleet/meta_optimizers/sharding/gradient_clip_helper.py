@@ -45,7 +45,7 @@ class GradientClipHelper(object):
                 if shard.is_param(param_name) and \
                   not shard.has_param(param_name):
                     deperate_op = True
-                elif shard.is_param(param_name) :
+                elif shard.is_param(param_name):
                     reversed_x_paramname.append(param_name)
 
             if deperate_op:
@@ -68,7 +68,7 @@ class GradientClipHelper(object):
                 for input_name in op.desc.input_arg_names():
                     if input_name not in deperated_vars:
                         reversed_inputs.append(input_name)
-                        
+
                 op.desc.set_input("X", reversed_inputs)
                 assert (len(op.desc.output_arg_names()) == 1)
                 sum_res = op.desc.output_arg_names()[0]
@@ -98,6 +98,17 @@ class GradientClipHelper(object):
                 #     inputs={'X': sum_res},
                 #     outputs={'Out': sum_res},
                 #     attrs={OP_ROLE_KEY: OpRole.Optimize})
+
+            # the grad sum here should take the all and only param in the current shard
+        to_check_param = set(reversed_x_paramname)
+        should_check_param = set(shard.global_params).intersection(
+            set([
+                param for param, worker_idx in shard.global_param2device.items()
+                if worker_idx == shard.worker_idx
+            ]))
+        assert to_check_param == should_check_param, "amp check_finite_and_unscale checking miss [{}] and got unexpected [{}]".format(
+            should_check_param - to_check_param,
+            to_check_param - should_check_param)
 
         # the grad sum here should take the all and only param in the current shard
         to_check_param = set(reversed_x_paramname)

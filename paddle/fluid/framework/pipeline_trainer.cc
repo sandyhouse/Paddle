@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #if defined(PADDLE_WITH_NCCL)
-#include <map>
 #include "paddle/fluid/framework/data_feed_factory.h"
 #include "paddle/fluid/framework/device_worker_factory.h"
 #include "paddle/fluid/framework/trainer.h"
@@ -25,6 +24,9 @@ namespace framework {
 void PipelineTrainer::Initialize(const TrainerDesc& trainer_desc,
                                  Dataset* dataset) {
   const auto& section_params = trainer_desc.section_param();
+  const auto num_pipeline_stages_ = section_params.num_pipeline_stages();
+  const auto pipeline_stage_ = section_params.pipeline_stage();
+  const auto schedule_mode_ = section_params.schedule_mode();
   num_microbatches_ = section_params.num_microbatches();
   VLOG(3) << "Number of microbatches per minibatch: " << num_microbatches_;
   trainer_desc_ = trainer_desc;
@@ -40,6 +42,9 @@ void PipelineTrainer::Initialize(const TrainerDesc& trainer_desc,
   this_worker->SetPlace(place_);
   this_worker->Initialize(trainer_desc);
   this_worker->SetMicrobatchNum(num_microbatches_);
+  this_worker->SetPipelineStageNum(num_pipeline_stages_);
+  this_worker->SetPipelineStage(pipeline_stage_);
+  this_worker->SetScheduleMode(schedule_mode_);
 }
 
 void PipelineTrainer::InitOtherEnv(const ProgramDesc& main_program) {

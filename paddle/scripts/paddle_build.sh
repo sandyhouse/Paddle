@@ -253,7 +253,7 @@ function cmake_base() {
         -DWITH_GLOO=${gloo_flag}
         -DWITH_LITE=${WITH_LITE:-OFF}
         -DWITH_XPU=${WITH_XPU:-OFF}
-        -DLITE_GIT_TAG=develop
+        -DLITE_GIT_TAG=release/v2.8
         -DWITH_UNITY_BUILD=${WITH_UNITY_BUILD:-OFF}
     ========================================
 EOF
@@ -287,7 +287,7 @@ EOF
         -DWITH_GRPC=${grpc_flag} \
         -DWITH_PSCORE=${distibuted_flag} \
         -DWITH_GLOO=${gloo_flag} \
-        -DLITE_GIT_TAG=develop \
+        -DLITE_GIT_TAG=release/v2.8 \
         -DWITH_XPU=${WITH_XPU:-OFF} \
         -DXPU_SDK_ROOT=${XPU_SDK_ROOT:-""} \
         -DWITH_LITE=${WITH_LITE:-OFF} \
@@ -714,6 +714,10 @@ function generate_upstream_develop_api_spec() {
     git branch -D develop_base_pr
     ENABLE_MAKE_CLEAN="ON"
     rm -rf ${PADDLE_ROOT}/build/Makefile ${PADDLE_ROOT}/build/CMakeCache.txt
+    cmake_change=`git diff --name-only upstream/$BRANCH | grep "cmake/external" || true`
+    if [ ${cmake_change} ];then
+        rm -rf ${PADDLE_ROOT}/build/third_party
+    fi
 }
 
 function generate_api_spec() {
