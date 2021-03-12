@@ -110,11 +110,6 @@ class GradientClipHelper(object):
             should_check_param - to_check_param,
             to_check_param - should_check_param)
 
-        # the grad sum here should take the all and only param in the current shard
-        to_check_param = set(reversed_x_paramname)
-        should_check_param = set(shard.global_params).intersection(set([param for param, worker_idx in shard.global_param2device.items() if worker_idx == shard.worker_idx]))
-        assert to_check_param == should_check_param, "amp check_finite_and_unscale checking miss [{}] and got unexpected [{}]".format(should_check_param - to_check_param, to_check_param - should_check_param)
-       
         for var_name in deperated_vars:
             block._remove_var(var_name, sync=False)
         block._sync_with_cpp()

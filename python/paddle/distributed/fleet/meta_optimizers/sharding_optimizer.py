@@ -25,6 +25,7 @@ from paddle.distributed.fleet.meta_optimizers.sharding.gradient_clip_helper impo
 from .sharding.offload_helper import OffloadHelper
 from paddle.distributed.fleet.meta_optimizers.sharding.prune import ProgramDeps
 from paddle.distributed.fleet.meta_optimizers.sharding.utils import *
+import paddle.distributed.fleet as fleet
 
 import logging
 logging.basicConfig(
@@ -77,7 +78,7 @@ class ShardingOptimizer(MetaOptimizerBase):
 
     def _enable_strategy(self, dist_strategy, context):
         dist_strategy.sharding = True
-        dist_strategy.sharding_configs = {"fuse_broadcast_MB": 32}
+        dist_strategy.sharding_configs = {"broadcast_MB": 32}
 
     def minimize_impl(self,
                       loss,
@@ -87,11 +88,8 @@ class ShardingOptimizer(MetaOptimizerBase):
         """Implementation of minimize."""
         # TODO: (JZ-LIANG) support multiple comm in future
         # self._nrings = self.user_defined_strategy.nccl_comm_num
-        logging.info("########### into sharding minimize: wait at end")
         self._nrings_sharding = 1
         self._nrings_dp = 1
-        self._fuse_broadcast_MB = self.user_defined_strategy.sharding_configs[
-            "fuse_broadcast_MB"]
         self.hybrid_dp = self.user_defined_strategy.sharding_configs[
             "hybrid_dp"]
         self._as_outer_parallelism = self.user_defined_strategy.sharding_configs[
@@ -109,7 +107,22 @@ class ShardingOptimizer(MetaOptimizerBase):
             "pp_allreduce_in_optimize"]
         self.optimize_offload = self.user_defined_strategy.sharding_configs[
             "optimize_offload"]
+        self._sharding_segment_strategy = str(self.user_defined_strategy.sharding_configs[
+            "sharding_segment_strategy"])
 
+        if self._sharding_segment_strategy == "broadcast_size":
+            self._broadcast_MB = int(self.user_defined_strategy.sharding_configs[
+                "broadcast_MB"])
+            assert self._broadcast_MB > 0, "segment size should larger than zero !" 
+        elif self._sharding_segment_strategy == "anchors":
+            self._sharding_segment_anchors = self.user_defined_strategy.sharding_configs[
+                "sharding_segment_anchors"]
+            assert len(self._sharding_segment_anchors) > 0, "you should set the sharding segment anchors !" 
+            self._backward_remain_anchors = self._sharding_segment_anchors[:]
+            self._forward_remain_anchors = []
+        else:
+            raise NotImplementedError(
+                "the sharding segment strategy [{}] is not implemented".format(str(self._sharding_segment_strategy)))  
 
         if self.inner_opt is None:
             raise ValueError(
@@ -167,17 +180,14 @@ class ShardingOptimizer(MetaOptimizerBase):
 
         # step1: set_up
         self._set_up(params_grads)
-        logging.info("########### after inner _set_up")
 
         # step2: split_program
         self._split_program(main_block)
-        logging.info("########### after inner _split_program")
 
         # step3: add broadcast and reduce ops
         self._add_broadcast_allreduce(main_block)
         main_block._sync_with_cpp()
         startup_block._sync_with_cpp()
-        logging.info("########### after inner _add_broadcast_allreduce")
 
         # step4: insert reduce_sum for grad
         # grad_scale_coeff = self.role_maker._worker_num()
@@ -194,7 +204,6 @@ class ShardingOptimizer(MetaOptimizerBase):
         self._prune_startup_program(startup_block)
         if self.hybrid_dp:
             self._initialization_broadcast(startup_program)
-        logging.info("########### after prune")
 
         if self.use_pipeline:
             # pp_optimizer._rename_gradient_var_name(main_block)
@@ -269,7 +278,6 @@ class ShardingOptimizer(MetaOptimizerBase):
         with open("main_sharding_%d" % self.role_maker._worker_index(),
                   'w') as f:
             f.writelines(str(main_block.program))
-        logging.info("########### after pipeline")
 
         # check op dependecy
         check_broadcast(main_block)
@@ -278,7 +286,6 @@ class ShardingOptimizer(MetaOptimizerBase):
         #check_allreduce_sum(main_block, self._shard, self.dp_ring_id)
 
         self._wait()
-        logging.info("########### after inner wait")
         return optimize_ops, params_grads
 
     def _set_up(self, params_grads):
@@ -318,13 +325,6 @@ class ShardingOptimizer(MetaOptimizerBase):
             self._startup_program, self.current_endpoint,
             self.sharding_group_endpoints, self.sharding_rank,
             self.sharding_ring_id, False)
-
-        # # inner & outer model parallelism
-        # if self._as_outer_parallelism:
-        #     self._collective_helper._init_communicator(
-        #         self._startup_program, self.current_endpoint,
-        #         self.mp_group_endpoints, self.mp_rank,
-        #         self.mp_group_id, False)
 
         # dp
         if self.hybrid_dp:
@@ -408,21 +408,56 @@ class ShardingOptimizer(MetaOptimizerBase):
     #         if self.sharding_rank == 0:
     #             self._collective_helper._wait(current_endpoint, endpoints)
 
+    def collect_segment(self, segment, op_idx, block):
+        segment._start_idx = op_idx + 1
+        self._segments.insert(0, segment)
+        new_segment = ProgramSegment(block)
+        new_segment._end_idx = op_idx + 1
+
+        return new_segment
+
     def _split_program(self, block):
         for op_idx, op in reversed(list(enumerate(block.ops))):
             if int(op.attr('op_role')) != int(OpRole.Optimize):
                 last_backward_op_idx = op_idx + 1
                 break
+
+        var2broadcast_time = dict()
         segment = ProgramSegment(block)
         segment._end_idx = last_backward_op_idx
         for op_idx in reversed(range(last_backward_op_idx)):
             op = block.ops[op_idx]
             assert (int(op.attr('op_role')) != int(OpRole.Optimize))
-            if segment._param_mem >= self._fuse_broadcast_MB:
-                segment._start_idx = op_idx + 1
-                self._segments.insert(0, segment)
-                segment = ProgramSegment(block)
-                segment._end_idx = op_idx + 1
+            if self._sharding_segment_strategy == "broadcast_size":
+                if segment._param_mem >= self._broadcast_MB:
+                    segment = self.collect_segment(segment, op_idx, block)
+
+            elif self._sharding_segment_strategy == "anchors":
+                if int(op.attr('op_role')) == int(OpRole.Backward):
+                    for input_name in op.desc.input_arg_names():
+
+                        # NOTE (JZ-LIANG) naive rule to support amp, if amp change, should modify here accordingly
+                        if 'AMPOptimizer' in fleet._get_applied_meta_list():
+                            if ".cast_fp16@GRAD" not in input_name:
+                                continue
+                            else:
+                                input_name = input_name[:input_name.find(".cast_fp16@GRAD")]
+
+                        if input_name in self._backward_remain_anchors:
+                            logging.info("backward segment:")
+                            logging.info("op [{}] input [{}] output [{}]".format(op.desc.type() ,op.desc.input_arg_names(), op.desc.output_arg_names()))
+                            segment = self.collect_segment(segment, op_idx, block)
+                            assert input_name not in self._forward_remain_anchors, "segment anchor [{}] met twice !".format(input_name)
+                            self._backward_remain_anchors.remove(input_name)
+                            self._forward_remain_anchors.append(input_name)
+                elif int(op.attr('op_role')) == int(OpRole.Forward):
+                    for output_name in op.desc.output_arg_names():
+                        if output_name in self._forward_remain_anchors:
+                            logging.info("forward segment:")
+                            logging.info("op [{}] input [{}] output [{}]".format(op.desc.type() ,op.desc.input_arg_names(), op.desc.output_arg_names()))
+                            segment = self.collect_segment(segment, op_idx, block)
+                            self._forward_remain_anchors.remove(output_name)
+
 
             # find broadcast vars
             for input_name in op.desc.input_arg_names():
@@ -440,6 +475,15 @@ class ShardingOptimizer(MetaOptimizerBase):
                     broadcast_var_name = unique_name.generate(input_name +
                                                               "@BroadCast")
                     segment._fill_constant_vars.append(broadcast_var_name)
+
+                # (JZ-LIANG) should use Param base name ?
+                broadcast_var_base_name = input_name
+                if "subprog" in broadcast_var_base_name:
+                    # remove suffix
+                    broadcast_var_base_name = broadcast_var_base_name[:broadcast_var_base_name.find(".subprog")]
+
+                var2broadcast_time[broadcast_var_base_name] = var2broadcast_time.get(broadcast_var_base_name, 0) + 1
+
                 segment._param2broadcast[input_name] = broadcast_var_name
                 segment._broadcast_vars.append((broadcast_var_name,
                                                 self._shard.device(input_name)))
@@ -474,6 +518,21 @@ class ShardingOptimizer(MetaOptimizerBase):
         if segment._param_mem > 0:
             segment._start_idx = 0
             self._segments.insert(0, segment)
+
+
+        if self._sharding_segment_strategy == "anchors":
+            assert len(self._forward_remain_anchors) == 0, "remain anchors: {}".format(self._forward_remain_anchors)
+            assert len(self._backward_remain_anchors) == 0, "remain anchors: {}".format(self._backward_remain_anchors)
+
+        for varname in sorted(var2broadcast_time, key=var2broadcast_time.get, reverse=True):
+            logging.info("Sharding broadcast: [{}] times [{}]".format(var2broadcast_time[varname], varname))
+        for idx_ in range(len(self._segments)):
+            logging.info("segment [{}] :".format(idx_))
+            logging.info("start op: [{}]  [{}]".format(block.ops[self._segments[idx_]._start_idx].desc.type(),
+            block.ops[self._segments[idx_]._start_idx].desc.input_arg_names()))
+            logging.info("end   op: [{}]  [{}]".format(block.ops[self._segments[idx_]._end_idx].desc.type(),
+            block.ops[self._segments[idx_]._end_idx].desc.input_arg_names()))
+
         return
 
     def _prune_main_program(self, block):
@@ -786,12 +845,6 @@ class ShardingOptimizer(MetaOptimizerBase):
             self.pp_rank = -1
             self.pp_group_size = None
             self.pp_group_endpoints = None
-
-            # sharding parallelism is the only model parallelism in the current setting
-            self.mp_group_id = self.sharding_ring_id
-            self.mp_rank = self.sharding_rank
-            self.mp_group_size = self.sharding_group_size
-            self.mp_group_endpoints = self.sharding_group_endpoints[:]
 
             # sharding parallelism is the only model parallelism in the current setting
             self.mp_group_id = self.sharding_ring_id

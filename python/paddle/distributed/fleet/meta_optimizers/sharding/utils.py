@@ -206,7 +206,6 @@ def check_allreduce_sum(block, shard, sharding_ring_id, dp_ring_id=-1):
                             raise ValueError(
                                 "The grad in shard should be allreduce and sync"
                                 "twice before usage {}".format(input_name))
-                
 
             for output_name in op.desc.output_arg_names():
                 if output_name in vars_status and \
@@ -350,25 +349,6 @@ def insert_allreduce_ops(block, insert_idx, ring_id, allreduce_vars):
                    OP_ROLE_KEY: OpRole.Backward})
 
     return
-
-def insert_reduce_ops(block, insert_idx, ring_id, reduce_vars, shard):
-    """
-    _add_allreduce_ops
-    """
-    for var in reduce_vars:
-        root_id = get_grad_device(var, shard)
-        assert root_id >= 0, "root id should be a positive int".format(var)
-        block._insert_op_without_sync(
-            insert_idx,
-            type='c_reduce_sum',
-            inputs={'X': var},
-            outputs={'Out': var},
-            attrs={'ring_id': ring_id,
-                   'root_id': root_id,
-                   OP_ROLE_KEY: OpRole.Backward})
-
-    return
-
 
 
 def get_grad_device(grad_name, shard):
@@ -606,18 +586,3 @@ def save_persistables(exe, dirname, main_program, filename=None):
             filename=None)
 
     return
-
-def get_grad_device(grad_name, shard):
-    assert "@GRAD" in grad_name, "[{}] should be a grad variable.".format(grad_name)
-    base_name = None
-    # mind the traversal order 
-    possible_suffixes = ['.cast_fp16@GRAD', '@GRAD']
-    for suffix in possible_suffixes:
-        if suffix in grad_name :
-            base_name = re.sub(suffix, '', grad_name)
-            break
-
-    assert base_name in shard.global_param2device, "[{}] should be a param variable.".format(base_name)
-
-    return shard.global_param2device[base_name]
-
