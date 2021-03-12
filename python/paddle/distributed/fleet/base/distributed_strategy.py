@@ -790,6 +790,7 @@ class DistributedStrategy(object):
 
         **Notes**:
             **Detailed arguments for model_parallel_configs**
+
             **parallelism**: degree of model parallel
 
         Examples:
@@ -800,6 +801,7 @@ class DistributedStrategy(object):
             strategy = fleet.DistributedStrategy()
             strategy.model_parallel = True
             strategy.model_parallel_configs = {"parallelism": 12}
+
         """
 
         return get_msg_dict(self.strategy.model_parallel_configs)

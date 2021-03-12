@@ -29,7 +29,7 @@ message RecomputeConfig {
 }
 
 message ShardingConfig {
-  optional float fuse_broadcast_MB = 1 [ default = 32.0 ];
+  optional float broadcast_MB = 1 [ default = 32.0 ];
   optional bool hybrid_dp = 2 [ default = false ];
   optional int32 sharding_group_size = 3 [ default = 8 ];
   optional bool as_outer_parallelism = 4 [ default = false ];
@@ -40,6 +40,8 @@ message ShardingConfig {
   optional int32 pp_bz = 9 [ default = 1 ];
   optional bool pp_allreduce_in_optimize = 10 [ default = false ];
   optional bool optimize_offload = 11 [ default = false ];
+  optional string sharding_segment_strategy = 12 [ default = 'broadcast_size' ];
+  repeated string sharding_segment_anchors = 13;
 }
 
 message AMPConfig {

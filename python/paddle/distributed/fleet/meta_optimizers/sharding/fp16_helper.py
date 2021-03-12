@@ -162,6 +162,7 @@ class FP16Utils(object):
                 'use_calc_stream': True,
                 OP_ROLE_KEY: OpRole.Optimize
             })
+
         # comm_op_num = insert_sync_comm_op(block, update_loss_scaling_op_idx + 3,
         #                                   ring_id, [inf_var_int32])
 
