@@ -4080,11 +4080,8 @@ class PipelineOptimizer(object):
         return None
 
     def _rename_arg(self, op, old_name, new_name):
-        op_desc = op.desc
-        if isinstance(op_desc, tuple):
-            op_desc = op_desc[0]
-        op_desc._rename_input(old_name, new_name)
-        op_desc._rename_output(old_name, new_name)
+        op._rename_input(old_name, new_name)
+        op._rename_output(old_name, new_name)
 
     def _create_var(self, block, ref_var, name):
         """
@@ -4661,143 +4658,128 @@ class PipelineOptimizer(object):
 
                 if var_name not in input_var_to_device:
                     input_var_to_device[var_name] = []
-                if cur_device in input_var_to_device[var_name]:
+                if (cur_device, prev_device) in input_var_to_device[var_name]:
                     continue
-                input_var_to_device[var_name].append(cur_device)
 
-                op_role = op.all_attrs()[self._op_role_key]
-                var = block.vars[var_name]
-                prev_device_index = int(prev_device.split(':')[1])
-                cur_device_index = int(cur_device.split(':')[1])
-                pair = (prev_device_index, cur_device_index)
-                pair_key = prev_device_index * 1000 + cur_device_index
-                if cur_device_index > prev_device_index:
-                    ring_id = self.ring_id + cur_device_index - prev_device_index - 1
-                else:
-                    ring_id = self.ring_id + 2 + prev_device_index - cur_device_index - 1
-                print("call xx_insert, schedule_mode:", self.schedule_mode)
-                if self.schedule_mode == 0:  # GPipe
+                device_type = cur_device.split(':')[0] + ':'
+
+                def _insert_send_recv(cur_id, prev_id):
+                    nonlocal extra_index
+
+                    cur_dev = device_type + str(cur_id)
+                    prev_dev = device_type + str(prev_id)
+                    if (cur_dev, prev_dev) in input_var_to_device[var_name]:
+                        return
+
+                    if cur_id - prev_id > 1:
+                        _insert_send_recv(cur_id - 1, prev_id)
+                        _insert_send_recv(cur_id, cur_id - 1)
+                        input_var_to_device[var_name].append(
+                            (cur_dev, prev_dev))
+                        return
+                    elif cur_id - prev_id < -1:
+                        _insert_send_recv(cur_id + 1, prev_id)
+                        _insert_send_recv(cur_id, cur_id + 1)
+                        input_var_to_device[var_name].append(
+                            (cur_dev, prev_dev))
+                        return
+
+                    assert abs(cur_id - prev_id) == 1
+
+                    input_var_to_device[var_name].append((cur_dev, prev_dev))
+
+                    op_role = op.all_attrs()[self._op_role_key]
+                    var = block.vars[var_name]
+
+                    pair = (prev_id, cur_id)
+                    pair_key = prev_id * 1000 + cur_id
+                    if cur_id > prev_id:
+                        ring_id = self.ring_id + cur_id - prev_id - 1
+                    else:
+                        ring_id = self.ring_id + 2 + prev_id - cur_id - 1
+
+                    print("call xx_insert, schedule_mode:", self.schedule_mode)
+                    assert self.schedule_mode == 1
+                    if pair not in self._pipeline_pair:
+                        self._pipeline_pair.append(pair)
+                        self._pp_ring_map[pair_key] = self.ring_id
+                        ring_id = self.ring_id
+                        self.ring_id += 1
+                    else:
+                        ring_id = self._pp_ring_map[pair_key]
+
+                    print("opt: pp_pair: {}, ring_id: {}".format(pair, ring_id))
+
                     block._insert_op_without_sync(
                         index=index + extra_index,
-                        type='send_v2',
-                        inputs={'X': var},
-                        attrs={
-                            self._op_device_key: prev_device,
-                            self._op_role_key: op_role,
-                            'use_calc_stream': True,
-                            'peer': cur_device_index,
-                            'ring_id': self.ring_id
-                            if cur_device_index > prev_device_index else
-                            self.ring_id + 2,
-                        })
-                    extra_index += 1
-                    block._insert_op_without_sync(
-                        index=index + extra_index,
-                        type='recv_v2',
+                        type='c_sync_calc_stream',
+                        inputs={'X': [var]},
                         outputs={'Out': [var]},
                         attrs={
-                            'out_shape': var.shape,
-                            'dtype': var.dtype,
-                            self._op_device_key: cur_device,
+                            self._op_device_key: prev_dev,
                             self._op_role_key: op_role,
-                            'use_calc_stream': True,
-                            'peer': prev_device_index,
-                            'ring_id': self.ring_id
-                            if cur_device_index > prev_device_index else
-                            self.ring_id + 2,
                         })
                     extra_index += 1
-                    continue
-                assert self.schedule_mode == 1
-                if pair not in self._pipeline_pair:
-                    self._pipeline_pair.append(pair)
-                    self._pp_ring_map[pair_key] = self.ring_id
-                    ring_id = self.ring_id
-                    self.ring_id += 1
-                else:
-                    ring_id = self._pp_ring_map[pair_key]
-                print("opt: pp_pair: {}, ring_id: {}".format(pair, ring_id))
-                block._insert_op_without_sync(
-                    index=index + extra_index,
-                    #type='send_v2',
-                    type='c_broadcast',
-                    inputs={'X': var},
-                    outputs={'Out': var},
-                    attrs={
-                        self._op_device_key: prev_device,
-                        self._op_role_key: op_role,
-                        'use_calc_stream': False,
-                        #'peer': cur_device_index,
-                        #'ring_id': self.ring_id if cur_device_index > prev_device_index else self.ring_id + 2,
-                        'ring_id': ring_id,
-                        #'ring_id': self.ring_id,
-                        #'root': prev_device_index,
-                        'root': 0,
-                    })
-                extra_index += 1
-                #block._insert_op(
-                #    index=index + extra_index,
-                #    type='c_sync_comm_stream',
-                #    inputs={'X': [var]},
-                #    outputs={'Out': [var]},
-                #    attrs={
-                #        self._op_device_key: cur_device,
-                #        self._op_role_key:
-                #        core.op_proto_and_checker_maker.OpRole.Backward,
-                #        'ring_id': self.ring_id,
-                #        #'ring_id': self.ring_id if prev_device_index > cur_device_index else self.ring_id + 2,
-                #    })
-                #extra_index += 1
-                fill_shape = list(var.shape)
-                fill_shape[0] = 1
-                block._insert_op_without_sync(
-                    index=index + extra_index,
-                    #type='recv_v2',
-                    type='fill_constant',
-                    inputs={},
-                    outputs={'Out': [var]},
-                    attrs={
-                        'shape': fill_shape,
-                        'dtype': var.dtype,
-                        self._op_device_key: cur_device,
-                        self._op_role_key: op_role,
-                        'value': float(0.0),
-                    })
-                extra_index += 1
-                block._insert_op_without_sync(
-                    index=index + extra_index,
-                    #type='recv_v2',
-                    type='c_broadcast',
-                    inputs={'X': var},
-                    outputs={'Out': var},
-                    attrs={
-                        #'out_shape': var.shape,
-                        #'dtype': var.dtype,
-                        self._op_device_key: cur_device,
-                        self._op_role_key: op_role,
-                        'use_calc_stream': False,
-                        #'peer': prev_device_index,
-                        #'root': prev_device_index,
-                        'root': 0,
-                        #'ring_id': self.ring_id,
-                        'ring_id': ring_id,
-                        #'ring_id': self.ring_id if cur_device_index > prev_device_index else self.ring_id + 2,
-                        #'ring_id': self.ring_id if prev_device_index < cur_device_index else self.ring_id + 2,
-                    })
-                extra_index += 1
-                block._insert_op_without_sync(
-                    index=index + extra_index,
-                    type='c_sync_comm_stream',
-                    inputs={'X': [var]},
-                    outputs={'Out': [var]},
-                    attrs={
-                        self._op_device_key: cur_device,
-                        #self._op_role_key: core.op_proto_and_checker_maker.OpRole.Backward,
-                        self._op_role_key: op_role,
-                        'ring_id': ring_id,
-                        #'ring_id': self.ring_id if prev_device_index > cur_device_index else self.ring_id + 2,
-                    })
-                extra_index += 1
+
+                    block._insert_op_without_sync(
+                        index=index + extra_index,
+                        type="c_broadcast",
+                        inputs={'X': var},
+                        outputs={'Out': var},
+                        attrs={
+                            self._op_device_key: prev_dev,
+                            self._op_role_key: op_role,
+                            'use_calc_stream': False,
+                            'ring_id': ring_id,
+                            'root': 0,
+                        })
+                    extra_index += 1
+
+                    fill_shape = list(var.shape)
+                    fill_shape[0] = self.pp_bz
+                    block._insert_op_without_sync(
+                        index=index + extra_index,
+                        type='fill_constant',
+                        inputs={},
+                        outputs={'Out': [var]},
+                        attrs={
+                            'shape': fill_shape,
+                            'dtype': var.dtype,
+                            self._op_device_key: cur_dev,
+                            self._op_role_key: op_role,
+                            'value': float(0.0),
+                        })
+                    extra_index += 1
+                    block._insert_op_without_sync(
+                        index=index + extra_index,
+                        type='c_broadcast',
+                        inputs={'X': var},
+                        outputs={'Out': var},
+                        attrs={
+                            self._op_device_key: cur_dev,
+                            self._op_role_key: op_role,
+                            'use_calc_stream': True,
+                            'root': 0,
+                            'ring_id': ring_id,
+                        })
+                    extra_index += 1
+
+                    # block._insert_op_without_sync(
+                    #     index=index + extra_index,
+                    #     type='c_sync_comm_stream',
+                    #     inputs={'X': [var]},
+                    #     outputs={'Out': [var]},
+                    #     attrs={
+                    #         self._op_device_key: cur_dev,
+                    #         self._op_role_key: op_role,
+                    #         'ring_id': ring_id,
+                    #     })
+                    # extra_index += 1
+
+                _insert_send_recv(
+                    int(cur_device.split(':')[1]),
+                    int(prev_device.split(':')[1]))
+
         block._sync_with_cpp()
 
     def _clear_gradients(self, main_block, param_names):
@@ -4854,44 +4836,34 @@ class PipelineOptimizer(object):
 
     def _rename_gradient_var_name(self, block):
         for index, op in enumerate(block.ops):
-            if self._is_backward_op(op) and (
-                    self._op_role_var_key in op.attr_names):
-                op_role_var = op.attr(self._op_role_var_key)
+            if not self._is_optimize_op(op): continue
+            input_names = op.input_arg_names
+            output_names = op.output_arg_names
+            in_out_names = input_names + output_names
+            # append "MERGED" to the names of parameter gradients,
+            # and mofify the op_role_var attribute (by rename_arg func).
+            for name in in_out_names:
+                if not core.grad_var_suffix() in name: continue
+                param_name = name.strip(core.grad_var_suffix())
+                new_grad_name = name + "@MERGED"
+                self._rename_arg(op, name, new_grad_name)
 
-                if len(op_role_var) == 0:
-                    continue
-                for i in range(0, len(op_role_var), 2):
-                    grad_name = op_role_var[i + 1]
-                    grad_var = block.vars[grad_name]
-                    new_grad_var_name = unique_name.generate(grad_name)
-                    new_var = self._create_var(block, grad_var,
-                                               new_grad_var_name)
-                    new_var.persistable = False
-                    self._rename_arg(op, grad_name, new_grad_var_name)
+    def _accumulate_gradients(self, block, pp_allreduce_in_optimize=False):
+        """
+        Create a new merged gradient for each parameter and accumulate the
+        corresponding gradient to it.
+        """
+        merged_gradient_names = []
 
-    def _accumulate_gradients(self, block):
-        """
-        Accumulate the gradients generated in microbatch to the one in mini-batch.
-        """
-        first_optimize_op_index = None
         for index, op in reversed(tuple(enumerate(list(block.ops)))):
-            # device = op.attr(self._op_device_key)
             # remove the cast op of fp16 grad to fp32 grad
             if self._is_optimize_op(op) and op.type == 'cast':
                 in_name = op.input_arg_names[0]
                 out_name = op.output_arg_names[0]
-                if out_name.strip('@GRAD') in self._param_device_map:
+                if out_name.strip('@GRAD@MERGED') in self._param_device_map:
                     assert in_name.replace('.cast_fp16', '') == out_name
                     block._remove_op(index)
                     continue
-
-            if not self._is_optimize_op(op) and not first_optimize_op_index:
-                first_optimize_op_index = index + 1
-                if block.ops[
-                        first_optimize_op_index].type == 'c_sync_comm_stream':
-                    block.ops[first_optimize_op_index]._set_attr(
-                        self._op_role_key, self._op_role.Backward)
-                    first_optimize_op_index += 1
 
             if self._is_backward_op(op) and (
                     self._op_role_var_key in op.attr_names):
@@ -4900,132 +4872,80 @@ class PipelineOptimizer(object):
                 if len(op_role_var) == 0:
                     continue
                 assert len(op_role_var) % 2 == 0
+                op._remove_attr(self._op_role_var_key)
                 for i in range(0, len(op_role_var), 2):
-                    offset = 0
+                    offset = 1
                     param_name = op_role_var[i]
-                    if not block.has_var(param_name): continue
-                    # clear gradient
-                    param_grad_name = self._append_grad_suffix(param_name)
-                    # if not main_block.has_var(grad_name): continue
-                    if not block.has_var(param_grad_name):
+                    param_grad_name = param_name + core.grad_var_suffix()
+                    assert block.has_var(param_name), (
+                        "parameter {} not in "
+                        "current block.".format(param_name))
+                    merged_param_grad_name = param_grad_name + '@MERGED'
+                    if not block.has_var(merged_param_grad_name):
                         self._create_var(block, block.vars[param_name],
-                                         param_grad_name)
-                    assert block.has_var(param_grad_name)
+                                         merged_param_grad_name)
+                    assert block.has_var(merged_param_grad_name)
                     param_grad_var = block.var(param_grad_name)
-                    param_grad_var.persistable = True
+                    merged_param_grad_var = block.var(merged_param_grad_name)
+                    merged_param_grad_var.persistable = True
                     block._insert_op(
-                        index=first_optimize_op_index + offset,
+                        index=index + offset,
                         type='fill_constant',
                         inputs={},
-                        outputs={'Out': [param_grad_var]},
+                        outputs={'Out': [merged_param_grad_var]},
                         attrs={
-                            'shape': param_grad_var.shape,
-                            'dtype': param_grad_var.dtype,
+                            'shape': merged_param_grad_var.shape,
+                            'dtype': merged_param_grad_var.dtype,
                             'value': float(0),
-                            # self._op_device_key: device,
                             # a trick to run this op once per mini-batch
                             self._op_role_key: self._op_role.Optimize.LRSched,
                         })
-                    #offset += 1
-                    grad_name = op_role_var[i + 1]  # with _0 suffix
+                    offset += 1
+                    grad_name = op_role_var[i + 1]
                     grad_var = block.vars[grad_name]
-                    real_grad_name = grad_name[0:grad_name.find(
-                        '@GRAD')] + '@GRAD'  # without _0 suffix
-                    real_grad_var = block.vars[
-                        real_grad_name]  # without _0 suffix
-                    # new_grad_var_name = unique_name.generate(grad_name)
-                    # new_var = self._create_var(block, grad_var,
-                    #                            new_grad_var_name)
-                    # new_var.persistable = False
-                    # self._rename_arg(op, grad_name, new_grad_var_name)
                     if not 'cast_fp16' in grad_name:
                         block._insert_op(
-                            index=index + 1,
+                            index=index + offset,
                             type='sum',
-                            inputs={'X': [grad_var, real_grad_var]},
-                            outputs={'Out': real_grad_var},
+                            inputs={'X': [grad_var, merged_param_grad_var]},
+                            outputs={'Out': merged_param_grad_var},
                             attrs={
-                                #self._op_device_key: device,
                                 self._op_role_key: self._op_role.Backward,
-                                #self._op_role_var_key: op_role_var
                             })
-                        #offset += 1
+                        offset += 1
+                        merged_gradient_names.append(merged_param_grad_name)
                     else:
-                        grad_name = op_role_var[i + 1]  # with _0 suffix
-                        grad_var = block.vars[grad_name]
-                        fp32_grad_var_name = param_name + core.grad_var_suffix(
-                        )  # without _0 suffix
-                        fp32_grad_var = block.vars[fp32_grad_var_name]
-                        fp32_grad_var.persistable = True
-                        cast_grad_var_name = unique_name.generate(
-                            fp32_grad_var_name)
-                        cast_grad_var = self._create_var(block, fp32_grad_var,
+                        # cast gradient to fp32 to accumulate to merged gradient
+                        cast_grad_var_name = param_grad_name + '@TMP'
+                        cast_grad_var = self._create_var(block, param_grad_var,
                                                          cast_grad_var_name)
                         cast_grad_var.persistable = False
                         block._insert_op(
-                            index=index + 1,
+                            index=index + offset,
                             type='cast',
                             inputs={'X': grad_var},
                             outputs={'Out': cast_grad_var},
                             attrs={
                                 'in_dtype': grad_var.dtype,
                                 'out_dtype': cast_grad_var.dtype,
-                                # self._op_device_key: device,
                                 self._op_role_key: self._op_role.Backward,
-                                # self._op_role_var_key: op_role_var
                             })
                         offset += 1
                         block._insert_op(
-                            index=index + 2,
+                            index=index + offset,
                             type='sum',
-                            inputs={'X': [fp32_grad_var, cast_grad_var]},
-                            outputs={'Out': fp32_grad_var},
+                            inputs={
+                                'X': [merged_param_grad_var, cast_grad_var]
+                            },
+                            outputs={'Out': merged_param_grad_var},
                             attrs={
                                 # self._op_device_key: device,
                                 self._op_role_key: self._op_role.Backward,
-                                # self._op_role_var_key: op_role_var
+                                self._op_role_var_key: op_role_var
                             })
                         offset += 1
-                        #real_grad_name = grad_name[0:grad_name.find(
-                        #    '@GRAD')] + '@GRAD'
-                        #real_grad_var = block.vars[
-                        #    real_grad_name]  # without _0 suffix
-                        #block._insert_op(
-                        #    index=first_optimize_op_index + offset,
-                        #    type='cast',
-                        #    inputs={'X': fp32_grad_var},
-                        #    outputs={'Out': cast_var},
-                        #    attrs={
-                        #        'in_dtype': fp32_grad_var.dtype,
-                        #        'out_dtype': cast_var.dtype,
-                        #        # self._op_device_key: device,
-                        #        self._op_role_key: self._op_role.Backward,
-                        #        # self._op_role_var_key: op_role_var
-                        #    })
-                        #offset += 1
-                        #block._insert_op(
-                        #    index=first_optimize_op_index + offset,
-                        #    type='sum',
-                        #    inputs={'X': [grad_var, cast_var]},
-                        #    outputs={'Out': real_grad_var},
-                        #    attrs={
-                        #        # self._op_device_key: device,
-                        #        self._op_role_key: self._op_role.Backward,
-                        #        # self._op_role_var_key: op_role_var
-                        #    })
-                        #offset += 1
-                        #block._insert_op(
-                        #    index=first_optimize_op_index + offset,
-                        #    type='cast',
-                        #    inputs={'X': real_grad_var},
-                        #    outputs={'Out': fp32_grad_var},
-                        #    attrs={
-                        #        'in_dtype': real_grad_var.dtype,
-                        #        'out_dtype': fp32_grad_var.dtype,
-                        #        # self._op_device_key: device,
-                        #        self._op_role_key: self._op_role.Backward,
-                        #        # self._op_role_var_key: op_role_var
-                        #    })
+                        merged_gradient_names.append(merged_param_grad_name)
+        return merged_gradient_names
 
     def _add_sub_blocks(self, main_block, program_list):
         main_program = main_block.program
@@ -5173,6 +5093,7 @@ class PipelineOptimizer(object):
                  parameter_list=None,
                  no_grad_set=None):
         main_block = loss.block
+        self.origin_main_block = main_block
         if startup_program is None:
             startup_program = default_startup_program()
         optimize_ops, params_grads = self._optimizer.minimize(
@@ -5367,7 +5288,9 @@ class PipelineOptimizer(object):
                 if real_block.has_var(param): param_list.append(param)
             #self._clear_gradients(real_block, param_list)
             self._rename_gradient_var_name(real_block)
+            real_block._sync_with_cpp()
             self._accumulate_gradients(real_block)
+            real_block._sync_with_cpp()
 
         place_id = int(os.getenv("FLAGS_selected_gpus", "0"))
         main_program._pipeline_opt = {
