@@ -99,19 +99,18 @@ void PipelineTrainer::InitTrainerEnv(const ProgramDesc& main_program,
   microbatch_scopes_.resize(num_microbatches_);
 
   VLOG(3) << "Create minibatch and microbatch scopes...";
-  minibatch_scope_ = &root_scope_->NewScope();
   std::shared_ptr<framework::ProgramDesc> program;
   program.reset(new ProgramDesc(
       trainer_desc_.section_param().section_config().program_desc()));
   for (int j = 0; j < num_microbatches_; ++j) {
-    microbatch_scopes_[j] = &minibatch_scope_->NewScope();
+    microbatch_scopes_[j] = &root_scope_->NewScope();
     CopyParameters(j, *program, place_);
   }
 
   auto this_worker =
       std::dynamic_pointer_cast<paddle::framework::SectionWorker>(worker_);
   this_worker->SetRootScope(root_scope_);
-  this_worker->SetMinibatchScope(minibatch_scope_);
+  // this_worker->SetMinibatchScope(minibatch_scope_);
   this_worker->SetMicrobatchScopes(microbatch_scopes_);
 }
 
