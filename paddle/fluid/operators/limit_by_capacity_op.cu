@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "paddle/fluid/operators/math/math_function.h"
 #include "paddle/fluid/framework/op_registry.h"
 #include "paddle/fluid/operators/limit_by_capacity_op.h"
 #include "paddle/fluid/platform/device/gpu/gpu_primitives.h"
@@ -49,24 +50,30 @@ class LimitByCapacityOpCUDAKernel : public framework::OpKernel<T> {
  public:
   void Compute(const framework::ExecutionContext& context) const override {
     auto expert_count = context.Input<Tensor>("expert_count");
-    auto capacity = context.Input<Tensor>("capacity");
+    auto capacity = context.Attr<int64_t>("capacity");
     auto n_worker = context.Attr<int>("n_worker");
     auto out = context.Output<Tensor>("Out");
 
     auto n_expert = expert_count->numel() / n_worker;
     // std::cout << "n_expert" << n_expert << std::endl;
-    const auto place = context.GetPlace();
     const auto& dev_ctx =
         context.template device_context<platform::CUDADeviceContext>();
 
+    auto &place = *context.template device_context<platform::CUDADeviceContext>().eigen_device();
     dim3 grid_dim(CEIL(n_worker, 1024), n_expert);
     dim3 block_dim(1024);
-    auto out_data = out->mutable_data<T>(place);
+    auto out_data = out->mutable_data<T>(context.GetPlace());
     const T* ec_data = expert_count->data<T>();
 
     framework::Tensor capacity_copy;
-    framework::TensorCopy(*capacity, place, dev_ctx, &capacity_copy);
-    T* cap_data = capacity_copy.mutable_data<T>(place);
+    //framework::TensorCopy(*capacity, place, dev_ctx, &capacity_copy);
+    capacity_copy = context.AllocateTmpTensor<T, paddle::platform::CUDADeviceContext>(
+        {n_expert}, dev_ctx);
+    capacity_copy.mutable_data<T>(context.GetPlace());
+    auto capacity_copy_eigen = framework::EigenVector<T>::Flatten(capacity_copy);
+    capacity_copy_eigen.device(place) =
+        capacity_copy_eigen.constant(static_cast<T>(capacity));
+    T* cap_data = capacity_copy.data<T>();
 
     limit_by_capacity_impl<T><<<grid_dim, block_dim, 0, dev_ctx.stream()>>>(
         ec_data, cap_data, out_data, n_expert, n_worker);

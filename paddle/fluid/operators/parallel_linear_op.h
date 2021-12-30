@@ -18,6 +18,34 @@ limitations under the License. */
 
 namespace paddle {
 namespace operators {
+using Tensor = framework::Tensor;
+using LoDTensor = framework::LoDTensor;
+using DDim = framework::DDim;
+
+template <typename DeviceContext, typename RepeatsT = int>
+void RepeatsTensor2IndexTensor(const LoDTensor& repeats, LoDTensor* index, const platform::DeviceContext& ctx) {
+  LoDTensor repeats_cpu_copy;
+  if (!platform::is_cpu_place(repeats.place())) {
+    framework::TensorCopySync(repeats, platform::CPUPlace(), &repeats_cpu_copy);
+  }
+  const RepeatsT* repeats_data = platform::is_cpu_place(repeats.place())
+                                     ? repeats.data<RepeatsT>()
+                                     : repeats_cpu_copy.data<RepeatsT>();
+
+  int64_t index_size = 0;
+  for (int i = 0; i < repeats.dims()[0]; i++) {
+    index_size += repeats_data[i];
+  }
+  std::vector<RepeatsT> index_vec(index_size);
+  int offset = 0;
+  for (int i = 0; i < repeats.dims()[0]; i++) {
+    std::fill_n(index_vec.begin() + offset, repeats_data[i], i);
+    offset += repeats_data[i];
+  }
+  index->Resize(framework::make_ddim({index_size}));
+
+  paddle::framework::TensorFromVector<RepeatsT>(index_vec, ctx, index);
+}
 
 template <typename DeviceContext, typename T>
 class ParallelLinearOpCPUKernel : public framework::OpKernel<T> {
