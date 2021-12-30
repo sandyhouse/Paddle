@@ -44,8 +44,6 @@ def count_by_gate(gate, num_expert, world_size, require_pos=True, group=None):
 
 def limit_by_capacity(topk_idx, num_expert, world_size, capacity, group=None):
     with paddle.no_grad():
-        capacity = paddle.ones(
-            shape=[num_expert], dtype=paddle.int64) * capacity
         pos, lec, gec = count_by_gate(
             topk_idx, num_expert, world_size, require_pos=False, group=group)
         new_gec = paddle.distributed.utils.limit_by_capacity(gec, capacity,

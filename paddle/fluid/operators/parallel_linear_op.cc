@@ -41,7 +41,7 @@ class ParallelLinearOp : public framework::OperatorWithKernel {
     auto b_dims = ctx->GetInputDim("Bias");
 
     // auto expert_count_dims = ctx->GetInputDim("Expert_Count");
-    auto expert_count = ctx->Attrs().Get<std::vector<int>>("expert_count");
+    auto expert_count = ctx->Attrs().Get<std::vector<int64_t>>("expert_count");
     auto expert_count_dims = expert_count.size();
 
     PADDLE_ENFORCE_EQ(x_dims.size(), 2,

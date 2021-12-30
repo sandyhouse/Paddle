@@ -23,8 +23,28 @@ limitations under the License. */
 namespace paddle {
 namespace operators {
 using framework::Tensor;
+using Tensor = framework::Tensor;
 
 const int CUDA_NUM_THREADS = 1024;
+using platform::PADDLE_CUDA_NUM_THREADS;
+// function borrowed from repeat_interleave_op
+template <typename T, typename IndexT>
+__global__ void index_select_cuda_kernel(const T* input, T* output,
+                                         const IndexT* index, int64_t N,
+                                         int64_t stride, int64_t size,
+                                         int64_t delta) {
+  int64_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= N) {
+    return;
+  }
+
+  int64_t pre_idx = idx / (stride * size);
+  int64_t dim_idx = idx % (stride * size) / stride;
+  IndexT src_dim_idx = index[dim_idx];
+  int64_t input_idx = idx + (delta * pre_idx + src_dim_idx - dim_idx) * stride;
+  output[idx] = input[input_idx];
+}
+
 static inline int GET_BLOCKS(const int N) {
   return (N + CUDA_NUM_THREADS - 1) / CUDA_NUM_THREADS;
 }
@@ -127,8 +147,8 @@ class ParallelLinearCUDAKernel : public framework::OpKernel<T> {
     auto* x = ctx.Input<framework::LoDTensor>("X");
     auto* w = ctx.Input<Tensor>("W");
     auto* bias = ctx.Input<Tensor>("Bias");
-    // auto* gpu_expert_count = ctx.Input<Tensor>("Expert_Count");
-    auto expert_count = ctx.Attr<std::vector<int>>("expert_count");
+    // auto* expert_count = ctx.Input<Tensor>("Expert_Count");
+    auto expert_count = ctx.Attr<std::vector<int64_t>>("expert_count");
 
     auto* output = ctx.Output<framework::LoDTensor>("Out");
 
@@ -139,17 +159,81 @@ class ParallelLinearCUDAKernel : public framework::OpKernel<T> {
     const auto in_feat = w_dims[1];
     const auto out_feat = w_dims[2];
     const auto batch_size = x_dims[0];
+   
+    auto &device_ctx = ctx.template device_context<platform::CUDADeviceContext>(); 
+    // to repeat bias
+    int dim = 0;
+    auto stride_dim = framework::stride(bias->dims());
+    int64_t stride = stride_dim[dim];
+    auto* bias_data = bias->data<T>();
+    const auto& index_type = framework::proto::VarType::INT64; 
+    bool index_type_match = index_type == framework::proto::VarType::INT64 ||
+                              index_type == framework::proto::VarType::INT32;
+    PADDLE_ENFORCE_EQ(
+          index_type_match, true,
+          platform::errors::InvalidArgument(
+              "Input(RepeatsTensor) holds the wrong type, it holds %s, but "
+              "desires to be %s or %s",
+              paddle::framework::DataTypeToString(index_type),
+              paddle::framework::DataTypeToString(
+                  framework::proto::VarType::INT32),
+              paddle::framework::DataTypeToString(
+                  framework::proto::VarType::INT64)));
+    framework::LoDTensor index;
+    auto input_dim = bias->dims();
+    auto stream = device_ctx.stream();
+    
+    framework::LoDTensor repeats_tensor;
+    paddle::framework::TensorFromVector<int64_t>(expert_count, &repeats_tensor);
+    
+    if (index_type == framework::proto::VarType::INT64) {
+        
+        RepeatsTensor2IndexTensor<DeviceContext, int64_t>(repeats_tensor, &index, device_ctx);
+        const int64_t* index_data = index.data<int64_t>();
+        auto output_dim = framework::vectorize(bias->dims());
+        output_dim[dim] = index.dims()[0];
 
+        output->Resize(framework::make_ddim(output_dim));
+        auto* out_data = output->mutable_data<T>(ctx.GetPlace());
+        int64_t numel = output->numel();
+        int64_t size = output_dim[dim];
+        int64_t delta = input_dim[dim] - size;
+       
+        index_select_cuda_kernel<T, int64_t><<<
+            (numel + PADDLE_CUDA_NUM_THREADS - 1) / PADDLE_CUDA_NUM_THREADS,
+            PADDLE_CUDA_NUM_THREADS, 0, stream>>>(bias_data, out_data, index_data,
+                                                  numel, stride, size, delta);  
+
+    } else{
+        RepeatsTensor2IndexTensor<DeviceContext, int>(repeats_tensor, &index, device_ctx);
+        
+        const int* index_data = index.data<int>();
+        auto output_dim = framework::vectorize(bias->dims());
+        output_dim[dim] = index.dims()[0];
+        output->Resize(framework::make_ddim(output_dim));
+        auto* out_data = output->mutable_data<T>(ctx.GetPlace());
+        int64_t numel = output->numel();
+        int64_t size = output_dim[dim];
+        int64_t delta = input_dim[dim] - size;
+
+        index_select_cuda_kernel<T, int><<<
+            (numel + PADDLE_CUDA_NUM_THREADS - 1) / PADDLE_CUDA_NUM_THREADS,
+            PADDLE_CUDA_NUM_THREADS, 0, stream>>>(bias_data, out_data, index_data,
+                                                  numel, stride, size, delta);
+
+    }
+    
     // get data ptr
     const T* x_data = x->data<T>();
     const T* w_data = w->data<T>();
-    const T* bias_data = bias->data<T>();
+    T* out_data = output->data<T>();
+    //const T* bias_data = bias->data<T>();
 
     const auto& dev_ctx =
         ctx.template device_context<platform::CUDADeviceContext>();
 
-    output->Resize({batch_size, out_feat});
-    T* out_data = output->mutable_data<T>(ctx.GetPlace());
+    // output->Resize({batch_size, out_feat});
+    // T* out_data = output->mutable_data<T>(ctx.GetPlace());
 
     // initialize
     // auto out_eigen = framework::EigenVector<T>::Flatten(*output);
@@ -174,15 +258,17 @@ class ParallelLinearCUDAKernel : public framework::OpKernel<T> {
 
       blas.GEMM(CblasNoTrans, CblasNoTrans, expert_count[i], out_feat, in_feat,
                 static_cast<T>(1), x_data + ptr * in_feat,
-                w_data + i * in_feat * out_feat, static_cast<T>(0),
+                w_data + i * in_feat * out_feat, static_cast<T>(1),
                 out_data + out_feat * ptr);
+      
 
       // TODO(shenliang03): speed up for moe
-      add_bias<T>(dev_ctx.stream(), out_data + out_feat * ptr,
-                  bias_data + i * out_feat, expert_count[i], out_feat);
+      // add_bias<T>(dev_ctx.stream(), out_data + out_feat * ptr,
+      //            bias_data + i * out_feat, expert_count[i], out_feat);
 
       ptr += expert_count[i];
     }
+   
   }
 };
 
@@ -193,8 +279,8 @@ class ParallelLinearGradOpCUDAKernel : public framework::OpKernel<T> {
     auto* x = ctx.Input<Tensor>("X");
     auto* w = ctx.Input<Tensor>("W");
 
-    // auto* gpu_expert_count = ctx.Input<Tensor>("Expert_Count");
-    auto expert_count = ctx.Attr<std::vector<int>>("expert_count");
+    // auto* expert_count = ctx.Input<Tensor>("Expert_Count");
+    auto expert_count = ctx.Attr<std::vector<int64_t>>("expert_count");
 
     auto* dout = ctx.Input<Tensor>(framework::GradVarName("Out"));
 

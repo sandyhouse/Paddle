@@ -40,12 +40,14 @@ class GShardGate(NaiveGate):
             x, return_all_scores=True)
         s = gate_score.shape[0]
         top1_idx = topk_idx.flatten()
-        c_e = paddle.scatter(
-            paddle.zeros(shape=[self.tot_expert]),
+        c_e = paddle.zeros(shape=[self.tot_expert])
+        paddle.scatter_(
+            c_e,
             top1_idx,
             paddle.ones_like(
                 top1_idx, dtype="float32"),
-            overwrite=False) / s
+            overwrite=False)
+        c_e = c_e / s
         m_e = paddle.mean(F.softmax(gate_score, axis=1), axis=0)
         loss = paddle.mean(c_e * m_e) * (self.num_expert**2)
         self.set_loss(loss)

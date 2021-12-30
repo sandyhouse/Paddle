@@ -19,7 +19,7 @@ import numpy as np
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
-from paddle.distributed.utils import expert_count, assign_pos, global_scatter, global_gather
+from paddle.distributed.utils import expert_count, assign_pos, global_scatter, global_gather, fused_moe_scatter, fused_moe_gather
 from paddle.distributed import alltoall, all_gather
 
 from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
@@ -45,9 +45,9 @@ def _local_gather(inp, pos, out_batch_size, maybe_overlap=True):
     if pos.shape != [0]:
         origin_dtype = inp.dtype
         inp = paddle.cast(inp, dtype="float32")
-        inp_buf = paddle.scatter(
-            paddle.zeros(
-                shape=[out_batch_size, inp.shape[-1]], dtype="float32"),
+        inp_buf = paddle.zeros(shape=[out_batch_size, inp.shape[-1]], dtype="float32")
+        paddle.scatter_(
+            inp_buf,
             pos,
             inp,
             overwrite=True)
@@ -372,10 +372,11 @@ class MoeLayer(nn.Layer):
             temp_pos = pos
         assert topk == self.top_k
 
-        x = MOEScatter.apply(inp, temp_pos, local_expert_count,
-                             global_expert_count, fwd_batch_size,
-                             self.world_size, self.group)
-
+        #x = MOEScatter.apply(inp, temp_pos, local_expert_count,
+        #                     global_expert_count, fwd_batch_size,
+        #                     self.world_size, self.group)
+        
+        x = fused_moe_scatter(inp, temp_pos, local_expert_count, global_expert_count, self.world_size, self.group)
         d_model = self.d_model
 
         def experts_fwd(x, fwd_expert_count, experts):
@@ -400,11 +401,12 @@ class MoeLayer(nn.Layer):
         if len(gate.shape) == 2:
             out_batch_size *= gate.shape[1]
 
-        x = MOEGather.apply(x, pos, local_expert_count, global_expert_count,
-                            out_batch_size, self.world_size, self.group)
-
-        x = x.reshape([-1, self.top_k, d_model])
-        value = value.reshape([x.shape[0], 1, self.top_k])
+        #x = MOEGather.apply(x, pos, local_expert_count, global_expert_count,
+        #                    out_batch_size, self.world_size, self.group)
+        
+        x = fused_moe_gather(x, pos, local_expert_count, global_expert_count, out_batch_size, self.world_size, self.group)
+        paddle.reshape_(x, [-1, self.top_k, self.d_model])
+        paddle.reshape_(value, [x.shape[0], 1, self.top_k])
         x = paddle.bmm(value, x).reshape([-1, d_model])
 
         if mp_size > 1:

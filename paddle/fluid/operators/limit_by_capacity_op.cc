@@ -24,8 +24,6 @@ class LimitByCapacityOp : public framework::OperatorWithKernel {
   void InferShape(framework::InferShapeContext* ctx) const override {
     OP_INOUT_CHECK(ctx->HasInput("expert_count"), "Input", "expert_count",
                    "LimitByCapacity");
-    OP_INOUT_CHECK(ctx->HasInput("capacity"), "Input", "capacity",
-                   "LimitByCapacity");
     OP_INOUT_CHECK(ctx->HasOutput("Out"), "Output", "Out", "LimitByCapacity");
 
     ctx->ShareDim("expert_count", "Out");
@@ -38,13 +36,6 @@ class LimitByCapacityOp : public framework::OperatorWithKernel {
     // the dtype of the expert_count and capacity should be same as int64
     auto expert_count_dtype =
         OperatorWithKernel::IndicateVarDataType(ctx, "expert_count");
-    auto capacity_dtype =
-        OperatorWithKernel::IndicateVarDataType(ctx, "capacity");
-
-    PADDLE_ENFORCE_EQ(
-        expert_count_dtype, capacity_dtype,
-        platform::errors::InvalidArgument(
-            "The dtype of the expert_count and capacity should be same"));
 
     PADDLE_ENFORCE_EQ(
         expert_count_dtype, framework::proto::VarType::INT64,
@@ -58,9 +49,9 @@ class LimitByCapacityOpMaker : public framework::OpProtoAndCheckerMaker {
  public:
   void Make() override {
     AddInput("expert_count", "(Tensor) The input expert count tensor.");
-    AddInput("capacity", "(Tensor) The input capacity.");
     AddOutput("Out",
               "(Tensor) The output tensor expert count limit by capacity.");
+    AddAttr<int64_t>("capacity", "（int64_t), the capacity of experts.");
     AddAttr<int>("n_worker", "（int), The number of works.");
     AddComment(
         R"DOC(limit_by_capacity Operator.limit expert count by capacity.)DOC");
