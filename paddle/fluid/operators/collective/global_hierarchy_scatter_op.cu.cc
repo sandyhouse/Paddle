@@ -1,4 +1,4 @@
-/* Copyright (c) 2021 PaddlePaddle Authors. All Rights Reserved.
+/* Copyright (c) 2022 PaddlePaddle Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -33,8 +33,6 @@ class GlobalHierarchyScatterOpCUDAKernel : public framework::OpKernel<T> {
   void Compute(const framework::ExecutionContext& ctx) const override {
 #if defined(PADDLE_WITH_NCCL)
 #if NCCL_VERSION_CODE >= 2703
-   
-    LOG(INFO) << "=============BBBBBBBBBBBB================";
     auto x = ctx.Input<framework::LoDTensor>("X");
     auto local_count = ctx.Input<framework::LoDTensor>("local_count");
     auto mp_global_count = ctx.Input<framework::LoDTensor>("mp_global_count");
@@ -104,16 +102,11 @@ class GlobalHierarchyScatterOpCUDAKernel : public framework::OpKernel<T> {
     auto in_feat = x->dims()[1];
     auto n_expert = local_count->dims()[0] / inside_nranks / outside_nranks;
     auto inside_all_experts = inside_nranks * n_expert;
-
-    LOG(INFO) <<"===========mp_global_count============"<<mp_global_count;
-    LOG(INFO) <<"===========dp_global_count============"<<dp_global_count;
-
     int mp_fwd_count = 0;
     for (auto i = 0; i < cpu_mp_global_count.numel(); ++i) {
       mp_fwd_count += cpu_mp_global_count_data[i];
     }
     
-    LOG(INFO) <<"=============before mp_all_to_all=========="<<mp_fwd_count;
     Tensor mp_global_res;
     mp_global_res = ctx.AllocateTmpTensor<int64_t, DeviceContext>({mp_fwd_count, in_feat}, dev_ctx);
     ncclDataType_t dtype = platform::ToNCCLDataType(x->type());
@@ -131,7 +124,6 @@ class GlobalHierarchyScatterOpCUDAKernel : public framework::OpKernel<T> {
           for (auto k = 0; k < n_expert; ++k) {
             int idx = k + j * n_expert + i * inside_all_experts;
             if (cpu_local_count_data[idx]) {
-            LOG(INFO) <<"send_dist"<<j<<"=====sidx="<<idx<<"=================inside_send_data=" << cpu_local_count_data[idx];
               PADDLE_ENFORCE_GPU_SUCCESS(
                   platform::dynload::ncclSend(inside_send_buf + inside_send_ptr * in_feat,
                                               cpu_local_count_data[idx] * in_feat,
@@ -139,7 +131,6 @@ class GlobalHierarchyScatterOpCUDAKernel : public framework::OpKernel<T> {
               inside_send_ptr += cpu_local_count_data[idx];
             }
             if (cpu_mp_global_count_data[idx]) {
-              LOG(INFO) <<"recv_src="<<recv_src % inside_nranks<<"==================ridx="<<idx<<"  =========inside_recv_data=" << cpu_mp_global_count_data[idx];
               PADDLE_ENFORCE_GPU_SUCCESS(
                   platform::dynload::ncclRecv(inside_recv_buf + inside_recv_ptr * in_feat,
                                               cpu_mp_global_count_data[idx] * in_feat,
@@ -151,14 +142,12 @@ class GlobalHierarchyScatterOpCUDAKernel : public framework::OpKernel<T> {
         }
     }
     PADDLE_ENFORCE_GPU_SUCCESS(platform::dynload::ncclGroupEnd());
-    LOG(INFO) <<"===============mp_global_res=========>" << mp_global_res;
 
     // Step3: get dp_global_count, just a normal all_to_all.
     int dp_fwd_count = 0;
     for (auto i = 0; i < cpu_dp_global_count.numel(); ++i) {
       dp_fwd_count += cpu_dp_global_count_data[i];
     }
-    LOG(INFO) <<"============before dp_all_to_all=============";
     auto outside_send_ptr = 0; 
     auto outside_recv_ptr = 0;
     auto outside_send_buf = mp_global_res.data<T>();
@@ -170,7 +159,6 @@ class GlobalHierarchyScatterOpCUDAKernel : public framework::OpKernel<T> {
       for (auto j = 0; j < inside_all_experts; ++j) {
         int idx = j + i * inside_all_experts;
         if (cpu_mp_global_count_data[idx]) {
-        LOG(INFO) <<"send_dist"<<i<<"=====sidx="<<idx<<"=================send_data=" << cpu_mp_global_count_data[idx];
           PADDLE_ENFORCE_GPU_SUCCESS(
               platform::dynload::ncclSend(outside_send_buf + outside_send_ptr * in_feat,
                                           cpu_mp_global_count_data[idx] * in_feat,
@@ -178,7 +166,6 @@ class GlobalHierarchyScatterOpCUDAKernel : public framework::OpKernel<T> {
           outside_send_ptr += cpu_mp_global_count_data[idx];
         }
         if (cpu_dp_global_count_data[idx]) {
-          LOG(INFO) <<"recv_src="<<recv_src % outside_nranks<<"==================ridx="<<idx<<"  =========recv_data=" <<cpu_dp_global_count_data[idx];
           PADDLE_ENFORCE_GPU_SUCCESS(
               platform::dynload::ncclRecv(outside_recv_buf + outside_recv_ptr * in_feat,
                                           cpu_dp_global_count_data[idx] * in_feat,
@@ -189,7 +176,6 @@ class GlobalHierarchyScatterOpCUDAKernel : public framework::OpKernel<T> {
       }
     }
     PADDLE_ENFORCE_GPU_SUCCESS(platform::dynload::ncclGroupEnd());
-    LOG(INFO) <<"===============dp_global_res=========>" << (*out);
 
 #else
     PADDLE_THROW(
