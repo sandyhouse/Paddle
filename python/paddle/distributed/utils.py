@@ -49,10 +49,10 @@ __all__ = [     #noqa
            'TrainerProc',
            'get_logger',
            'pull_worker_log',
-           'global_scatter',
-           'global_gather',
            'global_hierarchy_scatter',
            'global_hierarchy_gather',
+           'global_scatter',
+           'global_gather',
 ]
 
 
@@ -177,13 +177,14 @@ def global_scatter(x,
                    'use_calc_stream': use_calc_stream})
         return out
 
+
 def global_hierarchy_scatter(x,
-                   local_count,
-                   mp_global_count,
-                   dp_global_count,
-                   inside_group,
-                   outside_group,
-                   use_calc_stream=True):
+                             local_count,
+                             mp_global_count,
+                             dp_global_count,
+                             inside_group,
+                             outside_group,
+                             use_calc_stream=True):
     """
     The function of global_hierarchy_scatter operator is equal to global_scatter's, the difference between global_hierarchy_scatter and global_scatter is the order of all_to_all.
     global_hierarchy_scatter firstly execs the all_to_all inside the machine, finally, all_to_all outside the machine. in other words, it is a method of dp hierarchy global scatter.  
@@ -204,7 +205,7 @@ def global_hierarchy_scatter(x,
         out (Tensor): The data received from all experts. 
     
     """
-    assert inside_group is not None and outside_group is not None,"inside_group/outside_group can not be None."
+    assert inside_group is not None and outside_group is not None, "inside_group/outside_group can not be None."
     inside_ring_id = 0 if inside_group is None else inside_group.id
     outside_ring_id = 0 if outside_group is None else outside_group.id
     if in_dygraph_mode():
@@ -228,23 +229,25 @@ def global_hierarchy_scatter(x,
             inputs={
                 'X': [x],
                 'local_count': [local_count],
-                'mp_global_count':[mp_global_count],
-                'dp_global_count':[dp_global_count]
+                'mp_global_count': [mp_global_count],
+                'dp_global_count': [dp_global_count]
             },
             outputs={'Out': [out]},
-            attrs={'inside_ring_id': inside_ring_id,
-                   'outside_ring_id':inside_ring_id,
-                   'use_calc_stream': use_calc_stream})
+            attrs={
+                'inside_ring_id': inside_ring_id,
+                'outside_ring_id': inside_ring_id,
+                'use_calc_stream': use_calc_stream
+            })
         return out
 
 
 def global_hierarchy_gather(x,
-                   local_count,
-                   mp_global_count,
-                   dp_global_count,
-                   inside_group,
-                   outside_group,
-                   use_calc_stream=True):
+                            local_count,
+                            mp_global_count,
+                            dp_global_count,
+                            inside_group,
+                            outside_group,
+                            use_calc_stream=True):
     """
     The function of global_hierarchy_gather operator is equal to global_scatter's, the difference between global_hierarchy_gather and global_scatter is the order of all_to_all.
     global_hierarchy_gather firstly execs the all_to_all inside the machine, finally, all_to_all outside the machine. in other words, it is a method of dp hierarchy global scatter.  
@@ -265,7 +268,7 @@ def global_hierarchy_gather(x,
         out (Tensor): The data received from all experts. 
     
     """
-    assert inside_group is not None and outside_group is not None,"inside_group/outside_group can not be None."
+    assert inside_group is not None and outside_group is not None, "inside_group/outside_group can not be None."
 
     inside_ring_id = 0 if inside_group is None else inside_group.id
     outside_ring_id = 0 if outside_group is None else outside_group.id
@@ -290,14 +293,17 @@ def global_hierarchy_gather(x,
             inputs={
                 'X': [x],
                 'local_count': [local_count],
-                'mp_global_count':[mp_global_count],
-                'dp_global_count':[dp_global_count]
+                'mp_global_count': [mp_global_count],
+                'dp_global_count': [dp_global_count]
             },
             outputs={'Out': [out]},
-            attrs={'inside_ring_id': inside_ring_id,
-                   'outside_ring_id':inside_ring_id,
-                   'use_calc_stream': use_calc_stream})
+            attrs={
+                'inside_ring_id': inside_ring_id,
+                'outside_ring_id': inside_ring_id,
+                'use_calc_stream': use_calc_stream
+            })
         return out
+
 
 def global_gather(x,
                   local_count,
