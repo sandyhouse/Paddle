@@ -77,6 +77,7 @@ class ProcessGroup {
   int GetSize() const { return size_; }
 
   virtual const std::string GetBackendName() const = 0;
+  virtual void AddMap(int gid);
 
   virtual std::shared_ptr<ProcessGroup::Task> AllReduce(
       std::vector<Tensor>& /* tensors */,
@@ -148,6 +149,7 @@ class ProcessGroup {
  protected:
   const int rank_;
   const int size_;
+  const int gid_;
 };
 
 class ProcessGroupMapFromGid {
@@ -165,7 +167,7 @@ class ProcessGroupMapFromGid {
   }
 
   ProcessGroup* get(int gid) {
-    PADDLE_ENFORCE_EQ(has(gid), false,
+    PADDLE_ENFORCE_EQ(has(gid), true,
                       platform::errors::PreconditionNotMet(
                           "The process group with id %d doesnot exist.", gid));
     return map_.find(gid)->second;

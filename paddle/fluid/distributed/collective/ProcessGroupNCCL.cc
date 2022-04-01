@@ -227,6 +227,44 @@ std::shared_ptr<ProcessGroup::Task> ProcessGroupNCCL::Collective(
 }
 
 template <typename Fn>
+void ProcessGroupNCCL::Collective(const phi::DenseTensor* in,
+                                  phi::DenseTensor* out, Fn fn,
+                                  CommType op_type) {
+  std::vector<Place> places;
+  places.push_back(in->place());
+  const auto key = GetKeyFromPlaces(places);
+
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (places_to_ncclcomm_.find(key) == places_to_ncclcomm_.end()) {
+      CreateNCCLManagerCache(key, places);
+    }
+  }
+
+  auto& nccl_comms = places_to_ncclcomm_[key];
+
+  SyncDefaultStream(places, places_to_events_[key], places_to_ctx_[key]);
+
+  // construct uninitialize guard for device
+  platform::CUDADeviceGuard cuda_guard;
+
+  if (FLAGS_use_stream_safe_cuda_allocator) {
+    cuda_guard.SetDevice(places[0]);
+    memory::RecordStream(in->Holder(), places_to_ctx_[key][0]->stream());
+  }
+
+  {
+    platform::NCCLGroupGuard nccl_guard;
+    cuda_guard.SetDevice(places[0]);
+    const auto& nccl_stream = places_to_ctx_[key][0]->stream();
+    fn(in, out, nccl_comms[0]->GetNcclComm(), nccl_stream);
+  }
+
+  cuda_guard.SetDevice(places[0]);
+  // task->control_events_[0].Record(*places_to_ctx_[key][0]);
+}
+
+template <typename Fn>
 std::shared_ptr<ProcessGroup::Task> ProcessGroupNCCL::PointToPoint(
     std::vector<Tensor>& tensors, Fn fn, int dst_rank, CommType op_type) {
   const auto places = GetPlaceList(tensors);
@@ -313,6 +351,26 @@ std::shared_ptr<ProcessGroup::Task> ProcessGroupNCCL::Broadcast(
         return platform::dynload::ncclBcast(
             input_tensor->data(), input_tensor->numel(),
             platform::ToNCCLDataType(input.type()), root, comm, stream);
+      },
+      CommType::BROADCAST);
+}
+
+void ProcessGroupNCCL::Broadcast(const phi::DenseTensor* in,
+                                 phi::DenseTensor* out) {
+  return Collective(
+      in, out,
+      [&](const phi::DenseTensor* in, phi::DenseTensor* out, ncclComm_t comm,
+          const gpuStream_t& stream) {
+        const auto root = 0;
+        if (rank_ == 0) {
+          return platform::dynload::ncclBcast(
+              const_cast<void*>(in->data()), in->numel(),
+              platform::ToNCCLDataType(in->dtype()), root, comm, stream);
+        } else {
+          return platform::dynload::ncclBcast(
+              out->data(), out->numel(), platform::ToNCCLDataType(out->dtype()),
+              root, comm, stream);
+        }
       },
       CommType::BROADCAST);
 }
@@ -551,6 +609,13 @@ std::shared_ptr<ProcessGroup::Task> ProcessGroupNCCL::Scatter(
         }
       },
       CommType::SCATTER);
+}
+
+void ProcessGroupNCCL::AddMap(int gid) {
+  if (gid != IGNORE_ID) {
+    auto map = ProcessGroupMapFromGid::getInstance();
+    map->insert(gid, this);
+  }
 }
 
 }  //  namespace distributed

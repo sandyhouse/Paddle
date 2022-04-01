@@ -139,7 +139,7 @@ _group_map_by_name = {}
 # Name of the default group for init_parallel_env
 _default_group_name = "_default_pg"
 
-_valid_backend_list = ['nccl', 'gloo', 'hccl']
+_valid_backend_list = ['nccl', 'gloo', 'hccl', 'heter']
 _default_store = None  # the default tcp store
 _default_backend = None
 
@@ -209,6 +209,27 @@ def _new_process_group_impl(backend, store, rank, world_size, group_name,
         pg = core.ProcessGroupNCCL(store, rank, world_size)
     elif backend == "hccl":
         pg = core.ProcessGroupHCCL(store, rank, world_size)
+    elif backend == "heter":
+        cluster_id = int(os.getenv("CLUSTER_ID"))
+        cluster_sizes = os.getenv("CLUSTER_SIZE").split(",")
+        cluster_sizes = [int(s) for s in cluster_sizes]
+        switch_ep = os.getenv("CLUSTER_SWITCH")
+        cluster_size_cumsum = np.cumsum(cluster_sizes)
+        cluster_offset = 0 if cluster_id == 0 else cluster_size_cumsum[
+            cluster_id - 1]
+        global_rank = cluster_offset + rank
+        global_world_size = cluster_size_cumsum[-1]
+        pg = core.ProcessGroupHeter(
+            store,
+            rank=global_rank,
+            world_size=global_world_size,
+            gid=0,
+            local_rank=rank,
+            local_size=world_size,
+            gloo_rank=cluster_id,
+            gloo_size=len(cluster_sizes),
+            with_switch=True,
+            switch_endpoint=switch_ep)
 
     return pg
 

@@ -35,7 +35,11 @@ bool ProcessGroup::Task::Wait(std::chrono::milliseconds timeout) {
 void ProcessGroup::Task::Synchronize() {}
 
 ProcessGroup::ProcessGroup(int rank, int size, int gid)
-    : rank_(rank), size_(size) {
+    : rank_(rank), size_(size), gid_(gid) {
+  AddMap(gid);
+}
+
+void ProcessGroup::AddMap(int gid) {
   if (gid != IGNORE_ID) {
     auto map = ProcessGroupMapFromGid::getInstance();
     map->insert(gid, this);

@@ -104,6 +104,7 @@ class ProcessGroupGloo : public ProcessGroup {
       int world_size, int gid, std::shared_ptr<GlooOptions> options);
 
   ~ProcessGroupGloo() = default;
+  void AddMap(int gid) override;
 
   std::shared_ptr<ProcessGroup::Task> Broadcast(
       std::vector<Tensor>& inputs,

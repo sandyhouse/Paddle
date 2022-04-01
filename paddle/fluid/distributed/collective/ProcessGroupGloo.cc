@@ -500,5 +500,12 @@ ProcessGroupGloo::createDefaultDevice() {
   return createDeviceForHostname("127.0.0.1");
 }
 
+void ProcessGroupGloo::AddMap(int gid) {
+  if (gid != IGNORE_ID) {
+    auto map = ProcessGroupMapFromGid::getInstance();
+    map->insert(gid, this);
+  }
+}
+
 }  // namespace distributed
 }  // namespace paddle

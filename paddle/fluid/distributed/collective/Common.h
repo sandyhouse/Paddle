@@ -16,6 +16,8 @@
 
 #include "paddle/fluid/platform/place.h"
 #include "paddle/phi/api/include/api.h"
+#include "paddle/phi/api/include/tensor.h"
+#include "paddle/phi/core/dense_tensor.h"
 namespace paddle {
 namespace distributed {
 

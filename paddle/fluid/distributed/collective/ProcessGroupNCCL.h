@@ -83,6 +83,8 @@ class ProcessGroupNCCL : public ProcessGroup {
     return std::string(NCCL_BACKEND_NAME);
   }
 
+  void AddMap(int gid) override;
+
   std::shared_ptr<ProcessGroup::Task> AllReduce(
       std::vector<Tensor>& tensors,
       const AllreduceOptions& = AllreduceOptions()) override;
@@ -90,6 +92,8 @@ class ProcessGroupNCCL : public ProcessGroup {
   std::shared_ptr<ProcessGroup::Task> Broadcast(
       std::vector<Tensor>& tensors,
       const BroadcastOptions& = BroadcastOptions()) override;
+
+  void Broadcast(const phi::DenseTensor* in, phi::DenseTensor* out) override;
 
   std::shared_ptr<ProcessGroup::Task> Barrier(
       const BarrierOptions& = BarrierOptions()) override;
@@ -145,6 +149,10 @@ class ProcessGroupNCCL : public ProcessGroup {
       std::vector<Tensor>& inputs,   // NOLINT
       std::vector<Tensor>& outputs,  // NOLINT
       Fn fn, CommType op_type);
+
+  template <typename Fn>
+  void Collective(const phi::DenseTensor*, phi::DenseTensor*, Fn fn,
+                  CommType op_type);
 
   template <typename Fn>
   std::shared_ptr<ProcessGroup::Task> PointToPoint(

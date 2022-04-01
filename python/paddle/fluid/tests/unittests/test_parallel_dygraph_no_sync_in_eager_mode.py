@@ -25,7 +25,8 @@ from parallel_dygraph_no_sync import TestNoSync
 from parallel_dygraph_no_sync_unused_params import TestNoSyncUnusedParam
 from parallel_dygraph_no_sync_control_flow import TestNoSyncControlFlow
 
-flag_name = os.path.splitext(__file__)[0]
+#flag_name = os.path.splitext(__file__)[0]
+flag_name = "/tmp"
 
 
 class TestParallelDygraphNoSync(TestDistBase):
