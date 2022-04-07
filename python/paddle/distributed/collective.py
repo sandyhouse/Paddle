@@ -219,6 +219,10 @@ def _new_process_group_impl(backend, store, rank, world_size, group_name,
             cluster_id - 1]
         global_rank = cluster_offset + rank
         global_world_size = cluster_size_cumsum[-1]
+        print(
+            "global_rank: {}, world_size: {}, local_rank: {}, local_size: {}, gloo_rank: {}, gloo_size: {}".
+            format(global_rank, global_world_size, rank, world_size, cluster_id,
+                   len(cluster_sizes)))
         pg = core.ProcessGroupHeter(
             store,
             rank=global_rank,

@@ -302,34 +302,45 @@ void ProcessGroupHeter::Broadcast(const phi::DenseTensor* in,
     framework::TensorCopySync(*in, platform::CPUPlace(),
                               dense_cpu_tensor.get());
     if (with_switch_) {
-      if (local_rank_ == 0) {
-        HeterClient* client_ =
-            HeterClient::GetInstance({switch_endpoint_}, {}, 0).get();
-        if (gloo_rank_ == 0) {
-          std::vector<int> send_size;
-          send_size.push_back(in->numel());
-          int ret = client_->Send(
-              gid_, {in->name()}, send_size, dense_cpu_tensor->data(),
-              in->numel() * framework::DataTypeSize(in->dtype()));
-          PADDLE_ENFORCE_EQ(ret, 0, platform::errors::PreconditionNotMet(
-                                        "Send to the switch module error."));
-        } else {
-          int ret =
-              client_->Recv(gid_, {in->name()}, dense_cpu_tensor->data(),
-                            in->numel() * framework::DataTypeSize(in->dtype()));
-          PADDLE_ENFORCE_EQ(ret, 0,
-                            platform::errors::PreconditionNotMet(
-                                "Receive from the switch module error."));
-        }
+      HeterClient* client_ =
+          HeterClient::GetInstance({switch_endpoint_}, {}, 0).get();
+      if (gloo_rank_ == 0) {
+        VLOG(0) << "ProcessGroupHeter::1";
+        std::vector<int> send_size;
+        send_size.push_back(in->numel());
+        VLOG(0) << "ProcessGroupHeter::2";
+        int ret = client_->Send(
+            gid_, {in->name()}, send_size, dense_cpu_tensor->data(),
+            in->numel() * framework::DataTypeSize(in->dtype()));
+        VLOG(0) << "ProcessGroupHeter::3";
+        PADDLE_ENFORCE_EQ(ret, 0, platform::errors::PreconditionNotMet(
+                                      "Send to the switch module error."));
+      } else {
+        VLOG(0) << "ProcessGroupHeter::4";
+        int ret =
+            client_->Recv(gid_, {in->name()}, dense_cpu_tensor->data(),
+                          in->numel() * framework::DataTypeSize(in->dtype()));
+        VLOG(0) << "ProcessGroupHeter::5";
+        PADDLE_ENFORCE_EQ(ret, 0, platform::errors::PreconditionNotMet(
+                                      "Receive from the switch module error."));
+        VLOG(0) << "ProcessGroupHeter::6";
       }
+      VLOG(0) << "ProcessGroupHeter::7";
     } else {
+      VLOG(0) << "ProcessGroupHeter::8";
       std::vector<Tensor> cpu_tensors = {cpu_tensor};
+      VLOG(0) << "ProcessGroupHeter::9";
       auto gloo_task = inter_pg_->Broadcast(cpu_tensors);
+      VLOG(0) << "ProcessGroupHeter::10";
       gloo_task->Wait();
+      VLOG(0) << "ProcessGroupHeter::11";
     }
     framework::TensorCopySync(*dense_cpu_tensor, out->place(), out);
+    VLOG(0) << "ProcessGroupHeter::12";
   }
+  VLOG(0) << "ProcessGroupHeter::13";
   inner_pg_->Broadcast(out, out);
+  VLOG(0) << "ProcessGroupHeter::14";
 }
 
 void ProcessGroupHeter::AddMap(int gid) {

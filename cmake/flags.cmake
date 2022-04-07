@@ -136,7 +136,7 @@ set(COMMON_FLAGS
     -Werror
     -Wall
     -Wextra
-    -Wnon-virtual-dtor
+    -Wno-non-virtual-dtor
     -Wdelete-non-virtual-dtor
     -Wno-unused-parameter
     -Wno-unused-function
@@ -243,4 +243,3 @@ if(WITH_ROCM)
     string (REPLACE "-Werror" "-Wno-error" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
     string (REPLACE "-Werror" "-Wno-error" CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
 endif()
-
