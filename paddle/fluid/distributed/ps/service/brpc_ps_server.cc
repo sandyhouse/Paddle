@@ -14,7 +14,10 @@
 
 #include "paddle/fluid/distributed/ps/service/brpc_ps_server.h"
 #include <thread>  // NOLINT
+#ifdef PADDLE_WITH_ARM_BRPC
 #include "butil/object_pool.h"
+#endif
+#include "butil/endpoint.h"
 #include "paddle/fluid/distributed/common/cost_timer.h"
 #include "paddle/fluid/distributed/ps/table/depends/sparse_utils.h"
 #include "paddle/fluid/distributed/ps/table/table.h"
