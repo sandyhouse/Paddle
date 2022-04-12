@@ -104,7 +104,7 @@ std::shared_ptr<ProcessGroup::Task> ProcessGroupHeter::AllReduce(
   // Step2: copy tensors to CPU
   if (local_rank_ == 0) {
     std::vector<phi::DenseTensor> cpu_tensors;
-    cpu_tensors.reserve(in_tensors.size());
+    cpu_tensors.resize(in_tensors.size());
     for (size_t i = 0; i < in_tensors.size(); i++) {
       auto gpu_tensor = in_tensors[i];
       auto cpu_tensor = cpu_tensors[i];
@@ -118,11 +118,16 @@ std::shared_ptr<ProcessGroup::Task> ProcessGroupHeter::AllReduce(
             HeterClient::GetInstance({switch_endpoint_}, {}, 0).get();
         auto dense_cpu_tensor = cpu_tensors[0];
         std::vector<int> send_size;
-        send_size.push_back(dense_cpu_tensor.numel());
-        int ret = client_->Send(
-            gid_, {dense_cpu_tensor.name()}, send_size, dense_cpu_tensor.data(),
-            dense_cpu_tensor.numel() *
-                framework::DataTypeSize(dense_cpu_tensor.dtype()));
+        // send_size.push_back(dense_cpu_tensor.numel());
+        int a = 0;
+        send_size.push_back(1);
+        int ret =
+            client_->Send(gid_, {dense_cpu_tensor.name()}, send_size, &a, 1);
+        // int ret = client_->Send(
+        //     gid_, {dense_cpu_tensor.name()}, send_size,
+        //     dense_cpu_tensor.data(),
+        //     dense_cpu_tensor.numel() *
+        //         framework::DataTypeSize(dense_cpu_tensor.dtype()));
         PADDLE_ENFORCE_EQ(ret, 0, platform::errors::PreconditionNotMet(
                                       "Send to the switch module error."));
         phi::DenseTensorMeta meta = phi::DenseTensorMeta(
@@ -207,9 +212,10 @@ std::shared_ptr<ProcessGroup::Task> ProcessGroupHeter::Broadcast(
     cpu_tensors.reserve(in_tensors.size());
     for (size_t i = 0; i < in_tensors.size(); i++) {
       auto gpu_tensor = in_tensors[i];
-      auto cpu_tensor = cpu_tensors[i];
+      phi::DenseTensor cpu_tensor;
       cpu_tensor.Resize(gpu_tensor.dims());
       framework::TensorCopySync(gpu_tensor, platform::CPUPlace(), &cpu_tensor);
+      cpu_tensors.push_back(cpu_tensor);
     }
     if (with_switch_) {
       if (local_rank_ == 0) {
@@ -219,6 +225,11 @@ std::shared_ptr<ProcessGroup::Task> ProcessGroupHeter::Broadcast(
         if (gloo_rank_ == 0) {
           std::vector<int> send_size;
           send_size.push_back(dense_cpu_tensor.numel());
+          // int a = 0;
+          // send_size.push_back(1);
+          // int ret = client_->Send(
+          //    gid_, {dense_cpu_tensor.name()}, send_size,
+          //    &a, 4);
           int ret = client_->Send(
               gid_, {dense_cpu_tensor.name()}, send_size,
               dense_cpu_tensor.data(),
