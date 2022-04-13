@@ -58,7 +58,7 @@ ExternalProject_Add(
     PREFIX                ${ARM_BRPC_PREFIX_DIR}
     DOWNLOAD_DIR          ${ARM_BRPC_DOWNLOAD_DIR}
     #DOWNLOAD_COMMAND      wget --no-check-certificate ${ARM_BRPC_URL} -c -q -O ${ARM_BRPC_NAME}.tar.gz
-    DOWNLOAD_COMMAND      cp /home/wangbin44/Paddle/build/output.tar.gz . 
+    DOWNLOAD_COMMAND      cp /home/ssd1/lilong12/Paddle/build/output.tar.gz . 
     #                       && tar zxvf ${ARM_BRPC_NAME}.tar.gz && cp -r base ${ARM_BRPC_INSTALL_ROOT}
                           && tar zxvf output.tar.gz
     DOWNLOAD_NO_PROGRESS  1
