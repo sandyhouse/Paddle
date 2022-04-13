@@ -98,70 +98,82 @@ std::shared_ptr<ProcessGroup::Task> ProcessGroupHeter::AllReduce(
 #endif
 
   // Step1: do allreduce in inner cluster
+  VLOG(3) << "here0";
   auto task = inner_pg_->AllReduce(in_tensors, in_tensors, opts);
+  VLOG(3) << "here1";
   task->Wait();
+  VLOG(3) << "here2";
 
   // Step2: copy tensors to CPU
   if (local_rank_ == 0) {
     std::vector<phi::DenseTensor> cpu_tensors;
-    cpu_tensors.resize(in_tensors.size());
+    cpu_tensors.reserve(in_tensors.size());
+    phi::DenseTensor cpu_tensor;
     for (size_t i = 0; i < in_tensors.size(); i++) {
       auto gpu_tensor = in_tensors[i];
-      auto cpu_tensor = cpu_tensors[i];
       cpu_tensor.Resize(gpu_tensor.dims());
       framework::TensorCopySync(gpu_tensor, platform::CPUPlace(), &cpu_tensor);
+      cpu_tensors.push_back(cpu_tensor);
     }
+    VLOG(3) << "here3";
     // Step3: do inter cluster allreduce
     if (with_switch_) {
       if (local_rank_ == 0) {
         HeterClient* client_ =
             HeterClient::GetInstance({switch_endpoint_}, {}, 0).get();
+        VLOG(3) << "here4";
         auto dense_cpu_tensor = cpu_tensors[0];
         std::vector<int> send_size;
-        // send_size.push_back(dense_cpu_tensor.numel());
-        int a = 0;
-        send_size.push_back(1);
-        int ret =
-            client_->Send(gid_, {dense_cpu_tensor.name()}, send_size, &a, 1);
-        // int ret = client_->Send(
-        //     gid_, {dense_cpu_tensor.name()}, send_size,
-        //     dense_cpu_tensor.data(),
-        //     dense_cpu_tensor.numel() *
-        //         framework::DataTypeSize(dense_cpu_tensor.dtype()));
+        send_size.push_back(dense_cpu_tensor.numel());
+        VLOG(3) << "here5";
+        int ret = client_->Send(
+            gid_, {dense_cpu_tensor.name()}, send_size, dense_cpu_tensor.data(),
+            dense_cpu_tensor.numel() *
+                framework::DataTypeSize(dense_cpu_tensor.dtype()));
+        VLOG(3) << "here6";
         PADDLE_ENFORCE_EQ(ret, 0, platform::errors::PreconditionNotMet(
                                       "Send to the switch module error."));
-        phi::DenseTensorMeta meta = phi::DenseTensorMeta(
-            dense_cpu_tensor.dtype(), dense_cpu_tensor.dims());
-        std::shared_ptr<phi::DenseTensor> dense_cpu_tensor2 =
-            std::make_shared<phi::DenseTensor>(
-                std::make_unique<paddle::experimental::DefaultAllocator>(
-                    paddle::platform::CPUPlace())
-                    .get(),
-                meta);
-        dense_cpu_tensor2->ResizeAndAllocate(dense_cpu_tensor.dims());
+        // phi::DenseTensorMeta meta = phi::DenseTensorMeta(
+        //      dense_cpu_tensor.dtype(), dense_cpu_tensor.dims());
+        // std::shared_ptr<phi::DenseTensor> cpu_tensor2 =
+        //     std::make_shared<phi::DenseTensor>(
+        //         std::make_unique<paddle::experimental::DefaultAllocator>(
+        //             paddle::platform::CPUPlace())
+        //             .get(),
+        //         meta);
+        phi::DenseTensor cpu_tensor2;
+        VLOG(3) << "here7";
+        cpu_tensor2.AllocateFrom(
+            std::make_unique<paddle::experimental::DefaultAllocator>(
+                paddle::platform::CPUPlace())
+                .get(),
+            dense_cpu_tensor.dtype(), dense_cpu_tensor.numel());
+        VLOG(3) << "here8";
         ret = client_->Recv(
-            gid_, {dense_cpu_tensor.name()}, dense_cpu_tensor2->data(),
-            dense_cpu_tensor2->numel() *
-                framework::DataTypeSize(dense_cpu_tensor2->dtype()));
+            gid_, {dense_cpu_tensor.name()}, cpu_tensor2.data(),
+            cpu_tensor2.numel() * framework::DataTypeSize(cpu_tensor2.dtype()));
+        VLOG(3) << "here9";
         PADDLE_ENFORCE_EQ(ret, 0, platform::errors::PreconditionNotMet(
                                       "Recv from the switch module error."));
 
         switch (dense_cpu_tensor.dtype()) {
           case DataType::FLOAT32:
             _do_add<float>(reinterpret_cast<float*>(dense_cpu_tensor.data()),
-                           reinterpret_cast<float*>(dense_cpu_tensor2->data()),
+                           reinterpret_cast<float*>(cpu_tensor2.data()),
                            dense_cpu_tensor.numel());
+            VLOG(3) << "here10";
             break;
           case DataType::FLOAT64:
-            _do_add<double>(
-                reinterpret_cast<double*>(dense_cpu_tensor.data()),
-                reinterpret_cast<double*>(dense_cpu_tensor2->data()),
-                dense_cpu_tensor.numel());
+            _do_add<double>(reinterpret_cast<double*>(dense_cpu_tensor.data()),
+                            reinterpret_cast<double*>(cpu_tensor2.data()),
+                            dense_cpu_tensor.numel());
+            VLOG(3) << "here11";
             break;
           case DataType::INT32:
             _do_add<int>(reinterpret_cast<int*>(dense_cpu_tensor.data()),
-                         reinterpret_cast<int*>(dense_cpu_tensor2->data()),
+                         reinterpret_cast<int*>(cpu_tensor2.data()),
                          dense_cpu_tensor.numel());
+            VLOG(3) << "here12";
             break;
           default:
             PADDLE_THROW(platform::errors::PreconditionNotMet(
@@ -172,21 +184,27 @@ std::shared_ptr<ProcessGroup::Task> ProcessGroupHeter::AllReduce(
     } else {
       auto gloo_task = inter_pg_->AllReduce(cpu_tensors, cpu_tensors, opts);
       gloo_task->Wait();
+      VLOG(3) << "here13";
     }
     // Step4: copy cpu tensors to gpu
     // copy cpu tensors to gpu
     for (size_t i = 0; i < in_tensors.size(); i++) {
       auto gpu_tensor = out_tensors[i];
       auto cpu_tensor = cpu_tensors[i];
+      VLOG(3) << "here14";
       framework::TensorCopySync(cpu_tensor, cpu_tensor.place(), &gpu_tensor);
+      VLOG(3) << "here15";
     }
   }
 
   // Step5: broadcast among inner cluster
   auto b_opts = BroadcastOptions();
   b_opts.source_rank = 0;
+  VLOG(3) << "here16";
   auto broadcast_task = inner_pg_->Broadcast(out_tensors, out_tensors, b_opts);
+  VLOG(3) << "here17";
   broadcast_task->Wait();
+  VLOG(3) << "here18";
   return CreateTask(rank_, CommType::ALLREDUCE, in_tensors);
 }
 
