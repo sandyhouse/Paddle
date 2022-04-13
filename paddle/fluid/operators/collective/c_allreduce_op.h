@@ -16,12 +16,14 @@ limitations under the License. */
 
 #include <string>
 
+#include "paddle/fluid/distributed/collective/ProcessGroup.h"
 #include "paddle/fluid/framework/data_type.h"
 #include "paddle/fluid/framework/lod_tensor.h"
 #include "paddle/fluid/framework/op_registry.h"
 #include "paddle/fluid/memory/memcpy.h"
 #include "paddle/fluid/memory/memory.h"
 #include "paddle/fluid/platform/device/npu/npu_op_runner.h"
+#include "paddle/phi/api/include/tensor.h"
 
 #if defined(PADDLE_WITH_NCCL) || defined(PADDLE_WITH_RCCL) ||          \
     defined(PADDLE_WITH_ASCEND_CL) || defined(PADDLE_WITH_XPU_BKCL) || \
@@ -361,6 +363,18 @@ class CAllReduceOpCUDAKernel : public framework::OpKernel<T> {
     void* recvbuff = out->mutable_data<T>(place);
 
     int rid = ctx.Attr<int>("ring_id");
+    auto map = distributed::ProcessGroupMapFromGid::getInstance();
+    if (map->has(rid)) {
+      // Use ProcessGroup
+      distributed::ProcessGroup* pg = map->get(rid);
+      std::vector<phi::DenseTensor> in_tensor;
+      std::vector<phi::DenseTensor> out_tensor;
+      in_tensor.push_back(*in);
+      out_tensor.push_back(*out);
+      auto task = pg->AllReduce(in_tensor, out_tensor);
+      task->Wait();
+      return;
+    }
     auto comm = platform::NCCLCommContext::Instance().Get(rid, place);
 
     gpuStream_t stream = nullptr;
