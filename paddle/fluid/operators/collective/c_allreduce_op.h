@@ -189,6 +189,18 @@ class CAllReduceOpASCENDKernel : public framework::OpKernel<T> {
     void* recvbuff = reinterpret_cast<void*>(out->data<T>());
 
     int ring_id = ctx.Attr<int>("ring_id");
+    auto map = distributed::ProcessGroupMapFromGid::getInstance();
+    if (map->has(ring_id)) {
+      // Use ProcessGroup
+      distributed::ProcessGroup* pg = map->get(ring_id);
+      std::vector<phi::DenseTensor> in_tensor;
+      std::vector<phi::DenseTensor> out_tensor;
+      in_tensor.push_back(*in);
+      out_tensor.push_back(*out);
+      auto task = pg->AllReduce(in_tensor, out_tensor);
+      task->Wait();
+      return;
+    }
     std::string group =
         std::string(HCOM_GROUP_PREFIX) + std::to_string(ring_id);
     auto comm =
