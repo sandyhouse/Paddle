@@ -79,7 +79,12 @@ ProcessGroupHeter::ProcessGroupHeter(const std::shared_ptr<Store>& store,
 template <typename T>
 static void _do_add(T* dst, T* src, size_t size) {
   for (size_t i = 0; i < size; i++) {
+    VLOG(0) << "before";
+    VLOG(0) << *dst;
+    VLOG(0) << *src;
     *dst += *src;
+    VLOG(0) << "after";
+    VLOG(0) << *dst;
     dst++;
     src++;
   }
