@@ -14,15 +14,39 @@
 
 import paddle
 from paddle.distributed.utils import expert_count, assign_pos
+from paddle.fluid.framework import in_dygraph_mode
+from paddle.fluid.layer_helper import LayerHelper
+from paddle.fluid.data_feeder import check_variable_and_dtype
 
 
 def _alltoall(in_tensor_list, group=None, use_calc_stream=True):
     if group is not None and not group.is_member():
         return
     ring_id = 0 if group is None else group.id
-    nranks = len(in_tensor_list)
-    return paddle._C_ops.alltoall(in_tensor_list, 'use_calc_stream',
-                                  use_calc_stream, 'ring_id', ring_id)
+    if in_dygraph_mode():
+        out = paddle._C_ops.alltoall(in_tensor_list, 'use_calc_stream',
+                                     use_calc_stream, 'ring_id', ring_id)
+    else:
+        op_type = 'alltoall'
+        helper = LayerHelper(op_type, **locals())
+        out = helper.create_variable_for_type_inference(
+            dtype=in_tensor_list[0].dtype)
+
+        check_variable_and_dtype(
+            in_tensor_list, 'in_tensor_list',
+            ['float16', 'float32', 'float64', 'int32', 'int64'], 'all_to_all')
+        out = helper.create_variable_for_type_inference(
+            dtype=in_tensor_list.dtype, shape=in_tensor_list.shape)
+
+        helper.append_op(
+            type=op_type,
+            inputs={'X': [in_tensor_list]},
+            outputs={'Out': [out]},
+            attrs={
+                'ring_id': ring_id,
+                'use_calc_stream': use_calc_stream,
+            })
+    return out
 
 
 def count_by_gate(gate, num_expert, world_size, require_pos=True, group=None):
