@@ -231,7 +231,7 @@ FUNCTION(build_protobuf TARGET_NAME BUILD_FOR_HOST)
             ${SHALLOW_CLONE}
             PREFIX          ${PROTOBUF_PREFIX_DIR}
             DOWNLOAD_DIR          ${PROTOBUF_SOURCE_DIR}
-            DOWNLOAD_COMMAND    cp /home/wangbin44/Paddle/build/arm_protobuf.tar.gz .
+            DOWNLOAD_COMMAND    cp /home/lilong12/Paddle_pr2/build/arm_protobuf.tar.gz .
                                 && tar zxvf arm_protobuf.tar.gz
             UPDATE_COMMAND  ""
             CMAKE_ARGS          -DCMAKE_INSTALL_PREFIX:PATH=${PROTOBUF_INSTALL_DIR}

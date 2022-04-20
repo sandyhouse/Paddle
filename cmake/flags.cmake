@@ -133,6 +133,7 @@ if (NOT WIN32)
 set(COMMON_FLAGS
     -fPIC
     -fno-omit-frame-pointer
+    -faligned-new
     -Werror
     -Wall
     -Wextra
@@ -142,7 +143,6 @@ set(COMMON_FLAGS
     -Wno-unused-function
     -Wno-error=literal-suffix
     -Wno-error=unused-local-typedefs
-    -Wno-error=parentheses-equality # Warnings in pybind11
     -Wno-error=ignored-attributes  # Warnings in Eigen, gcc 6.3
     -Wno-error=terminate  # Warning in PADDLE_ENFORCE
     -Wno-error=int-in-bool-context # Warning in Eigen gcc 7.2

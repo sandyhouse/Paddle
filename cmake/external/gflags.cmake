@@ -42,7 +42,7 @@ if(WITH_ARM_BRPC)
         ${SHALLOW_CLONE}
         PREFIX          ${GFLAGS_PREFIX_DIR}
         DOWNLOAD_DIR          ${GFLAGS_SOURCE_DIR}
-        DOWNLOAD_COMMAND    cp /home/wangbin44/Paddle/build/arm_gflags.tar.gz .
+        DOWNLOAD_COMMAND    cp /home/lilong12/Paddle_pr2/build/arm_gflags.tar.gz .
                             && tar zxvf arm_gflags.tar.gz
         UPDATE_COMMAND  ""
         CMAKE_ARGS      -DCMAKE_INSTALL_PREFIX:PATH=${GFLAGS_INSTALL_DIR}
@@ -83,7 +83,7 @@ else()
     )
 endif()
 
-ADD_LIBRARY(gflags STATIC IMPORTED GLOBAL)
+ADD_LIBRARY(gflags SHARED IMPORTED GLOBAL)
 SET_PROPERTY(TARGET gflags PROPERTY IMPORTED_LOCATION ${GFLAGS_LIBRARIES})
 ADD_DEPENDENCIES(gflags extern_gflags)
 

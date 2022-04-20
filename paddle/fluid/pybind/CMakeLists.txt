@@ -87,7 +87,7 @@ if (WITH_ONNXRUNTIME)
   set(PYBIND_DEPS ${PYBIND_DEPS} onnxruntime_predictor)
 endif()
 
-if(NOT ON_INFER)
+if(ON_INFER)
   set (PYBIND_DEPS ${PYBIND_DEPS} processgroup eager_reducer)
   if (WITH_NCCL)
     set (PYBIND_DEPS ${PYBIND_DEPS} processgroup_nccl)

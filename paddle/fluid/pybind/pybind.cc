@@ -4517,7 +4517,7 @@ All parameter, weight, gradient are variables in Paddle.
   BindCompatible(&m);
   BindDataset(&m);
   BindGenerator(&m);
-#ifndef PADDLE_ON_INFERENCE
+#ifdef PADDLE_ON_INFERENCE
   BindDistributed(&m);
 #endif
 #ifdef PADDLE_WITH_ASCEND

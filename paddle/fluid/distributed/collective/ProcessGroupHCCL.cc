@@ -133,16 +133,18 @@ void ProcessGroupHCCL::CreateHCCLManagerCache(
   // using vector just for broadcast
   std::vector<HcclRootInfo> hccl_ids;
   hccl_ids.resize(1);
-  auto& hccl_id = hccl_ids.front();
 
+  VLOG(0) << "Here1";
   if (rank_ == 0) {
-    PADDLE_ENFORCE_NPU_SUCCESS(platform::dynload::HcclGetRootInfo(&hccl_id));
+    VLOG(0) << "Here2";
+    PADDLE_ENFORCE_NPU_SUCCESS(platform::dynload::HcclGetRootInfo(&hccl_ids[0]));
+    VLOG(0) << "Here3";
   }
   BroadcastUniqueHCCLID(hccl_ids);
 
   VLOG(3) << "init hccl rank: " << rank_ << ", nranks: " << size_
           << ", place: " << places_key
-          << ", hccl uniqueid: " << SerializeHCCLUniqueId(hccl_id);
+          << ", hccl uniqueid: " << SerializeHCCLUniqueId(hccl_ids[0]);
 
   std::vector<std::unique_ptr<NPUDeviceContext>> dev_ctx;
   dev_ctx.resize(places.size());
@@ -150,7 +152,7 @@ void ProcessGroupHCCL::CreateHCCLManagerCache(
   std::unique_ptr<HcclComm[]> comms(new HcclComm[places.size()]);
   for (size_t i = 0; i < places.size(); ++i) {
     platform::NPUDeviceGuard guard(places[i].GetDeviceId());
-    hccl_comms[i] = HCCLCommManager::Create(GetSize(), GetRank(), &hccl_id,
+    hccl_comms[i] = HCCLCommManager::Create(GetSize(), GetRank(), &hccl_ids[0],
                                             comms.get() + i);
     dev_ctx[i].reset(new NPUDeviceContext(places[i]));
   }

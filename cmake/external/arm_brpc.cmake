@@ -52,13 +52,15 @@ FILE(WRITE ${ARM_BRPC_DOWNLOAD_DIR}/CMakeLists.txt
   "install(DIRECTORY ${ARM_BRPC_DST_DIR} ${ARM_BRPC_DST_DIR} \n"
   "        DESTINATION ${ARM_BRPC_NAME})\n")
 
+MESSAGE("HHHHHHHHHHHHHHHHHHHHHHH")
+
 ExternalProject_Add(
     ${ARM_BRPC_PROJECT}
     ${EXTERNAL_PROJECT_LOG_ARGS}
     PREFIX                ${ARM_BRPC_PREFIX_DIR}
     DOWNLOAD_DIR          ${ARM_BRPC_DOWNLOAD_DIR}
     #DOWNLOAD_COMMAND      wget --no-check-certificate ${ARM_BRPC_URL} -c -q -O ${ARM_BRPC_NAME}.tar.gz
-    DOWNLOAD_COMMAND      cp /home/ssd1/lilong12/Paddle/build/output.tar.gz . 
+    DOWNLOAD_COMMAND      cp /home/lilong12/Paddle_pr2/build/output.tar.gz . 
     #                       && tar zxvf ${ARM_BRPC_NAME}.tar.gz && cp -r base ${ARM_BRPC_INSTALL_ROOT}
                           && tar zxvf output.tar.gz
     DOWNLOAD_NO_PROGRESS  1
