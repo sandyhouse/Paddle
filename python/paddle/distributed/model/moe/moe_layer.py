@@ -480,9 +480,12 @@ class MoeLayer(nn.Layer):
                     continue
                 y.append(experts[idx](x[last_index:expert_count + last_index]))
                 last_index = expert_count + last_index
-            return paddle.concat(y, axis=0)
+            if len(y) == 0:
+                return x
+            else:
+                return paddle.concat(y, axis=0)
 
-        if self.recompute_interval <= 0:
+        if self.recompute_interval <= 0 or x.shape[0] == 0:
             x = experts_fwd(x, fwd_expert_count.numpy(), self.experts)
         else:
             x = _hp_recompute(experts_fwd, x,
