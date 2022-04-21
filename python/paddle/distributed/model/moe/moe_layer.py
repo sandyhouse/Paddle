@@ -73,6 +73,15 @@ def _all_gather(tensor, group=None, use_calc_stream=True):
                                      'ring_id', ring_id, 'nranks', nranks)
 
 
+def _alltoall(in_tensor_list, group=None, use_calc_stream=True):
+    if group is not None and not group.is_member():
+        return
+    ring_id = 0 if group is None else group.id
+    nranks = len(in_tensor_list)
+    return paddle._C_ops.alltoall(in_tensor_list, 'use_calc_stream',
+                                  use_calc_stream, 'ring_id', ring_id)
+
+
 class MOEScatter(PyLayer):
     r"""
     Scatter input samples from [batch x sequences] to contiguous alone experts.
@@ -251,10 +260,28 @@ class Slice(PyLayer):
         # return grad_out
 
 
-def prepare_forward(gate, num_expert, world_size, moe_group):
-    pos, local_expert_count, global_expert_count = count_by_gate(
-        gate, num_expert, world_size, group=moe_group)
+def prune_gate(gate, num_expert, world_size, moe_group, capacity):
+    total_expert_count = num_expert * world_size
     with paddle.no_grad():
+        local_expert_count = expert_count(gate, total_expert_count)
+        gshard_count = local_expert_count
+
+        # prune gate
+        # mask = local_expert_count > capacity
+        # local_expert_count[mask] = capacity
+        local_expert_count = paddle.clip(local_expert_count, 0, capacity)
+
+        gate = paddle.distributed.utils.prune_gate_by_capacity(
+            gate, local_expert_count, num_expert, world_size)
+
+        if world_size > 1:
+            global_expert_count = _alltoall(local_expert_count, group=moe_group)
+        else:
+            global_expert_count = local_expert_count
+
+        lec_cum = paddle.cumsum(local_expert_count, axis=0)
+        pos = assign_pos(gate, lec_cum)
+
         fwd_expert_count = global_expert_count.reshape_(
             [world_size, num_expert]).sum(axis=0)
 
@@ -268,7 +295,8 @@ def prepare_forward(gate, num_expert, world_size, moe_group):
         local_expert_count,
         global_expert_count,
         fwd_expert_count,
-        fwd_batch_size, )
+        fwd_batch_size, 
+        gshard_count, )
 
 
 class MoeLayer(nn.Layer):
@@ -385,6 +413,13 @@ class MoeLayer(nn.Layer):
                 str(gate))
         self.gate = gate
 
+    def set_fuse_gshard(self, score, local_expert_count):
+        self.score = score
+        self.local_expert_count = local_expert_count
+
+    def get_fuse_gshard(self):
+        return self.score, self.local_expert_count
+
     def forward(self, inp):
         # inp shape: b * s * m
         assert len(inp.shape) == 3
@@ -398,15 +433,26 @@ class MoeLayer(nn.Layer):
             mp_size = self.mp_group.nranks
         if mp_size > 1:
             inp = Slice.apply(inp, mp_rank, mp_size, self.mp_group)
-        value, gate = self.gate(inp)
+
+        # use gshard loss
+        # value, gate = self.gate(inp)
+        value, gate, gate_score = self.gate(inp)
+
+        cap_rate = 1.0
+        capacity = math.ceil(cap_rate * inp.shape[0] //
+                             (self.num_expert * self.world_size))
 
         (
             pos,
             local_expert_count,
             global_expert_count,
             fwd_expert_count,
-            fwd_batch_size, ) = prepare_forward(gate, self.num_expert,
-                                                self.world_size, self.group)
+            fwd_batch_size, 
+            gshard_count, ) = prune_gate(gate, self.num_expert, self.world_size,
+                                         self.group, capacity)
+
+        # self.set_gshard_loss(gshard_count, gate_score)
+        self.set_fuse_gshard(gate_score, gshard_count)
 
         topk = 1
         if len(gate.shape) == 2:
