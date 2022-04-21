@@ -455,7 +455,7 @@ class MoeLayer(nn.Layer):
         assert topk == self.top_k
 
         cpu_local_count = local_expert_count.numpy()
-        cpu_global_count = global_expert_count.numpy()
+        cpu_global_count = global_expert_count.numpy().reshape(-1)
         lec_cumsum = np.cumsum(cpu_local_count)
 
         x = MOEScatter.apply(
