@@ -29,6 +29,13 @@ class BaseGate(nn.Layer):
     def set_loss(self, loss):
         self.loss = loss
 
+    def set_fuse_gshard(self, score, local_expert_count):
+        self.score = score
+        self.local_expert_count = local_expert_count
+
+    def get_fuse_gshard(self):
+        return self.score, self.local_expert_count
+
     def get_loss(self, clear=True):
         loss = self.loss
         if clear:

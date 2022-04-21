@@ -23,10 +23,10 @@ class GlobalGatherOp : public framework::OperatorWithKernel {
 
   void InferShape(framework::InferShapeContext* ctx) const override {
     OP_INOUT_CHECK(ctx->HasInput("X"), "Input", "X", "GlobalGather");
-    OP_INOUT_CHECK(ctx->HasInput("local_count"), "Input", "local_count",
-                   "GlobalGather");
-    OP_INOUT_CHECK(ctx->HasInput("global_count"), "Input", "global_count",
-                   "GlobalGather");
+    // OP_INOUT_CHECK(ctx->HasInput("local_count"), "Input", "local_count",
+    //                "GlobalGather");
+    // OP_INOUT_CHECK(ctx->HasInput("global_count"), "Input", "global_count",
+    //                "GlobalGather");
     OP_INOUT_CHECK(ctx->HasOutput("Out"), "Output", "Out", "GlobalGather");
     int ring_id = ctx->Attrs().Get<int>("ring_id");
     PADDLE_ENFORCE_GE(
@@ -58,14 +58,14 @@ class GlobalGatherOpMaker : public framework::OpProtoAndCheckerMaker {
  public:
   void Make() {
     AddInput("X", "(Tensor) tensor send.");
-    AddInput("local_count",
-             "(Tensor) Tensor which has n_expert * world_size elements that "
-             "indicates"
-             "how many data needed to be received from each expert.");
-    AddInput("global_count",
-             "(Tensor) Tensor which has n_expert * world_size elements that "
-             "indicates"
-             "how many data needed to be sent to each expert.");
+    // AddInput("local_count",
+    //          "(Tensor) Tensor which has n_expert * world_size elements that "
+    //          "indicates"
+    //          "how many data needed to be received from each expert.");
+    // AddInput("global_count",
+    //          "(Tensor) Tensor which has n_expert * world_size elements that "
+    //          "indicates"
+    //          "how many data needed to be sent to each expert.");
     AddOutput("Out", "(Tensor) the result of global_gather.");
     AddAttr<int>("ring_id", "(int default 0) nccl communication ring id.")
         .SetDefault(0);
@@ -73,6 +73,11 @@ class GlobalGatherOpMaker : public framework::OpProtoAndCheckerMaker {
         "use_calc_stream",
         "(bool default false) eject CUDA operations to calculation stream.")
         .SetDefault(false);
+    AddAttr<std::vector<int64_t>>("cpu_local_count", "use local count")
+        .SetDefault({});
+    AddAttr<std::vector<int64_t>>("cpu_global_count", "use global count")
+        .SetDefault({});
+    AddAttr<std::vector<int64_t>>("lec_cumsum", "lec_cumsum").SetDefault({});
     AddComment(R"DOC(
 Global Gather Operator
 Gather data in X to n_expert * world_size exeperts according to
@@ -91,8 +96,8 @@ class GlobalGatherOpGradMaker : public framework::SingleGradOpMaker<T> {
   void Apply(GradOpPtr<T> retv) const override {
     retv->SetType("global_scatter");
     retv->SetInput("X", this->OutputGrad("Out"));
-    retv->SetInput("local_count", this->Input("local_count"));
-    retv->SetInput("global_count", this->Input("global_count"));
+    // retv->SetInput("local_count", this->Input("local_count"));
+    // retv->SetInput("global_count", this->Input("global_count"));
     retv->SetOutput("Out", this->InputGrad("X"));
     retv->SetAttrMap(this->Attrs());
   }

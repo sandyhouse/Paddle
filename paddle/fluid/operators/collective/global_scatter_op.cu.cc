@@ -28,40 +28,45 @@ class GlobalScatterOpCUDAKernel : public framework::OpKernel<T> {
 #if defined(PADDLE_WITH_NCCL)
 #if NCCL_VERSION_CODE >= 2703
     auto x = ctx.Input<framework::LoDTensor>("X");
-    auto local_count = ctx.Input<framework::LoDTensor>("local_count");
-    auto global_count = ctx.Input<framework::LoDTensor>("global_count");
-    auto local_count_type = local_count->type();
-    auto global_count_type = global_count->type();
-    if (local_count_type != framework::proto::VarType::INT64) {
-      PADDLE_THROW(platform::errors::InvalidArgument(
-          "Please use int64 type in local_count."));
-    }
-    if (global_count_type != framework::proto::VarType::INT64) {
-      PADDLE_THROW(platform::errors::InvalidArgument(
-          "Please use int64 type in global_count."));
-    }
+    // auto local_count = ctx.Input<framework::LoDTensor>("local_count");
+    // auto global_count = ctx.Input<framework::LoDTensor>("global_count");
+    // auto local_count_type = local_count->type();
+    // auto global_count_type = global_count->type();
+
+    auto cpu_local_count = ctx.Attr<std::vector<int64_t>>("cpu_local_count");
+    auto cpu_global_count = ctx.Attr<std::vector<int64_t>>("cpu_global_count");
+    auto lec_cumsum = ctx.Attr<std::vector<int64_t>>("lec_cumsum");
+
+    // if (local_count_type != framework::proto::VarType::INT64) {
+    //   PADDLE_THROW(platform::errors::InvalidArgument(
+    //       "Please use int64 type in local_count."));
+    // }
+    // if (global_count_type != framework::proto::VarType::INT64) {
+    //   PADDLE_THROW(platform::errors::InvalidArgument(
+    //       "Please use int64 type in global_count."));
+    // }
     auto out = ctx.Output<framework::LoDTensor>("Out");
-    const int64_t* cpu_local_count_data;
-    const int64_t* cpu_global_count_data;
-    framework::Tensor cpu_local_count;
-    if (platform::is_cpu_place(local_count->place())) {
-      cpu_local_count_data = local_count->data<int64_t>();
-    } else {
-      framework::TensorCopySync(*local_count, platform::CPUPlace(),
-                                &cpu_local_count);
-      cpu_local_count_data = cpu_local_count.data<int64_t>();
-    }
-    auto global_count_len = 0;
-    framework::Tensor cpu_global_count;
-    if (platform::is_cpu_place(global_count->place())) {
-      cpu_global_count_data = global_count->data<int64_t>();
-      global_count_len = global_count->numel();
-    } else {
-      framework::TensorCopySync(*global_count, platform::CPUPlace(),
-                                &cpu_global_count);
-      cpu_global_count_data = cpu_global_count.data<int64_t>();
-      global_count_len = cpu_global_count.numel();
-    }
+    // const int64_t* cpu_local_count_data;
+    // const int64_t* cpu_global_count_data;
+    // framework::Tensor cpu_local_count;
+    // if (platform::is_cpu_place(local_count->place())) {
+    //   cpu_local_count_data = local_count->data<int64_t>();
+    // } else {
+    //   framework::TensorCopySync(*local_count, platform::CUDAPinnedPlace(),
+    //                             &cpu_local_count);
+    //   cpu_local_count_data = cpu_local_count.data<int64_t>();
+    // }
+    // auto global_count_len = 0;
+    // framework::Tensor cpu_global_count;
+    // if (platform::is_cpu_place(global_count->place())) {
+    //   cpu_global_count_data = global_count->data<int64_t>();
+    //   global_count_len = global_count->numel();
+    // } else {
+    //   framework::TensorCopySync(*global_count, platform::CUDAPinnedPlace(),
+    //                             &cpu_global_count);
+    //   cpu_global_count_data = cpu_global_count.data<int64_t>();
+    //   global_count_len = cpu_global_count.numel();
+    // }
 
     ncclDataType_t dtype = platform::ToNCCLDataType(x->type());
 
@@ -83,40 +88,40 @@ class GlobalScatterOpCUDAKernel : public framework::OpKernel<T> {
     }
     int nranks = comm->nranks();
     auto in_feat = x->dims()[1];
-    auto n_expert = local_count->dims()[0] / nranks;
+    auto n_expert = cpu_local_count.size() / nranks;
     int64_t fwd_count = 0;
 
-    for (auto i = 0; i < global_count_len; ++i) {
-      fwd_count += cpu_global_count_data[i];
+    for (size_t i = 0; i < cpu_global_count.size(); ++i) {
+      fwd_count += cpu_global_count[i];
     }
     framework::DDim out_dims = framework::make_ddim({fwd_count, in_feat});
-    int64_t* expert_ptr = new int64_t[n_expert * nranks];
-    expert_ptr[0] = 0;
-    auto tot_experts = n_expert * nranks;
-    for (auto i = 1; i < tot_experts; ++i) {
-      expert_ptr[i] = expert_ptr[i - 1] + cpu_local_count_data[i - 1];
-    }
+    // int64_t* expert_ptr = new int64_t[n_expert * nranks];
+    // expert_ptr[0] = 0;
+    // auto tot_experts = n_expert * nranks;
+    // for (auto i = 1; i < tot_experts; ++i) {
+    //   expert_ptr[i] = expert_ptr[i - 1] + cpu_local_count_data[i - 1];
+    // }
 
     auto recv_ptr = 0;
     auto send_buf = x->data<T>();
     auto recv_buf = out->mutable_data<T>(out_dims, place);
 
-    for (auto i = 0; i < n_expert; ++i) {
+    for (size_t i = 0; i < n_expert; ++i) {
       PADDLE_ENFORCE_GPU_SUCCESS(platform::dynload::ncclGroupStart());
       for (auto j = 0; j < nranks; ++j) {
         int idx = i + j * n_expert;
-        if (cpu_local_count_data[idx]) {
-          PADDLE_ENFORCE_GPU_SUCCESS(
-              platform::dynload::ncclSend(send_buf + expert_ptr[idx] * in_feat,
-                                          cpu_local_count_data[idx] * in_feat,
-                                          dtype, j, comm->comm(), stream));
+        if (cpu_local_count[idx]) {
+          int64_t offset = idx > 0 ? lec_cumsum[idx - 1] : 0;
+
+          PADDLE_ENFORCE_GPU_SUCCESS(platform::dynload::ncclSend(
+              send_buf + offset * in_feat, cpu_local_count[idx] * in_feat,
+              dtype, j, comm->comm(), stream));
         }
-        if (cpu_global_count_data[idx]) {
-          PADDLE_ENFORCE_GPU_SUCCESS(
-              platform::dynload::ncclRecv(recv_buf + recv_ptr * in_feat,
-                                          cpu_global_count_data[idx] * in_feat,
-                                          dtype, j, comm->comm(), stream));
-          recv_ptr += cpu_global_count_data[idx];
+        if (cpu_global_count[idx]) {
+          PADDLE_ENFORCE_GPU_SUCCESS(platform::dynload::ncclRecv(
+              recv_buf + recv_ptr * in_feat, cpu_global_count[idx] * in_feat,
+              dtype, j, comm->comm(), stream));
+          recv_ptr += cpu_global_count[idx];
         }
       }
       PADDLE_ENFORCE_GPU_SUCCESS(platform::dynload::ncclGroupEnd());

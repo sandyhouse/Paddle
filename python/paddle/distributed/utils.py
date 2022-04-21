@@ -118,6 +118,7 @@ def assign_pos(x, cum_count):
 def global_scatter(x,
                    local_count,
                    global_count,
+                   lec_cumsum,
                    group=None,
                    use_calc_stream=True):
     """
@@ -207,8 +208,13 @@ def global_scatter(x,
 
     ring_id = 0 if group is None else group.id
     if in_dygraph_mode():
-        return _C_ops.global_scatter(x, local_count, \
-                                    global_count,  \
+        # return core.ops.global_scatter(x, local_count, \
+        #                             global_count,  \
+        #                             'use_calc_stream', use_calc_stream, \
+        #                             'ring_id', ring_id)
+        return core.ops.global_scatter(x, "cpu_local_count",local_count, \
+                                    "cpu_global_count",global_count,  \
+                                    "lec_cumsum", lec_cumsum, \
                                     'use_calc_stream', use_calc_stream, \
                                     'ring_id', ring_id)
     else:
@@ -240,6 +246,7 @@ def global_scatter(x,
 def global_gather(x,
                   local_count,
                   global_count,
+                  lec_cumsum,
                   group=None,
                   use_calc_stream=True):
     """
@@ -319,8 +326,10 @@ def global_gather(x,
 
     ring_id = 0 if group is None else group.id
     if in_dygraph_mode():
-        return _C_ops.global_gather(x, local_count, \
-                                    global_count, \
+        return core.ops.global_gather(x,
+                                    "cpu_local_count",local_count, \
+                                    "cpu_global_count",global_count,  \
+                                    "lec_cumsum", lec_cumsum, \
                                     'use_calc_stream', use_calc_stream, \
                                     'ring_id', ring_id)
     else:
