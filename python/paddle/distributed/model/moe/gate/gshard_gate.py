@@ -37,41 +37,5 @@ class GShardGate(NaiveGate):
     def forward(self, x):
         topk_val, topk_idx, gate_score = super().forward(
             x, return_all_scores=True)
-        # s = gate_score.shape[0]
 
-        # top1_idx = topk_idx.flatten()
-        # c_e = paddle.scatter(
-        #     paddle.zeros(shape=[self.tot_expert]),
-        #     top1_idx,
-        #     paddle.ones_like(
-        #         top1_idx, dtype="float32"),
-        #     overwrite=False) / s
-
-        # m_e = paddle.mean(F.softmax(gate_score, axis=1), axis=0)
-
-        # # print("ce", c_e, "me", m_e)
-
-        # loss = paddle.mean(c_e * m_e) * (self.num_expert**2)
-        # self.set_loss(loss)
-
-        # cap_rate = self.capacity[0 if self.training else 1]
-        # capacity = math.ceil(cap_rate * x.shape[0])
-        # _new_lec, _new_gec, topk_idx, old_lec = limit_by_capacity(
-        #     topk_idx,
-        #     self.num_expert,
-        #     self.world_size,
-        #     capacity,
-        #     group=self.group)
-
-        # m_e = paddle.mean(F.softmax(gate_score, axis=1), axis=0)
-        # loss = paddle.mean(paddle.cast(old_lec, dtype=m_e.dtype) * m_e) * (self.num_expert**2)
-        # self.set_loss(loss)
-
-        # self.set_fuse_gshard(gate_score, old_lec)
-
-        # if self.random_routing:
-        #     rand_routing_prob = paddle.rand(
-        #         shape=[gate_score.shape[0]], dtype="float32")
-        #     topk_idx = paddle.distributed.utils.random_routing(
-        #         topk_idx, topk_val, rand_routing_prob)
         return topk_val, topk_idx, gate_score

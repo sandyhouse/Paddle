@@ -26,7 +26,7 @@ from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
 from paddle.distributed import fleet
 from paddle.autograd import PyLayer
 from .gate import NaiveGate, GShardGate, SwitchGate
-from .utils import count_by_gate
+from .utils import count_by_gate, _alltoall
 from paddle.distributed.fleet.meta_parallel.pp_utils.utils import _hp_recompute
 from paddle import fluid
 from paddle.fluid import core
@@ -71,15 +71,6 @@ def _all_gather(tensor, group=None, use_calc_stream=True):
     ).nranks if group is None else group.nranks
     return paddle._C_ops.c_allgather(tensor, 'use_calc_stream', use_calc_stream,
                                      'ring_id', ring_id, 'nranks', nranks)
-
-
-def _alltoall(in_tensor_list, group=None, use_calc_stream=True):
-    if group is not None and not group.is_member():
-        return
-    ring_id = 0 if group is None else group.id
-    nranks = len(in_tensor_list)
-    return paddle._C_ops.alltoall(in_tensor_list, 'use_calc_stream',
-                                  use_calc_stream, 'ring_id', ring_id)
 
 
 class MOEScatter(PyLayer):

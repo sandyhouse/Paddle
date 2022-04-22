@@ -214,7 +214,8 @@ class FusedMultiHeadAttention(Layer):
             dropout_rate=self.dropout_rate,
             attn_dropout_rate=self.attn_dropout_rate,
             ln_epsilon=self._epsilon,
-            training=self.training,
+            training=True,
+            # training=self.training,
             name=self.name)
         return out
 
