@@ -244,6 +244,10 @@ bool VarBase::_IsGradientSetEmpty() {
   return res;
 }
 
+void VarBase::WaitForBlocking(const platform::Place& dst_place) const {
+  platform::DeviceContextPool::Instance().Get(dst_place)->Wait();
+}
+
 std::shared_ptr<VarBase> VarBase::NewVarBase(const platform::Place& dst_place,
                                              const bool blocking) const {
   PADDLE_ENFORCE_EQ(

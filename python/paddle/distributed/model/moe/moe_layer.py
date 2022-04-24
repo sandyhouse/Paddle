@@ -469,7 +469,7 @@ class MoeLayer(nn.Layer):
         def experts_fwd(x, fwd_expert_count, experts):
             y = []
             last_index = 0
-            if self.training or not hasattr(self, "htoh4_weight_buffer"):
+            if not hasattr(self, "htoh4_weight_buffer"):
                 fwd_expert_count = fwd_expert_count.numpy()
                 assert isinstance(fwd_expert_count, np.ndarray)
                 assert len(experts) == len(fwd_expert_count)

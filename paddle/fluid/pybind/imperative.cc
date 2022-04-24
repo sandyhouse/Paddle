@@ -1712,15 +1712,15 @@ void BindImperative(py::module *m_ptr) {
                  None
            )DOC")
       .def("cpu",
-           [](const std::shared_ptr<imperative::VarBase> &self) {
+           [](const std::shared_ptr<imperative::VarBase> &self, bool blocking) {
              if (platform::is_cpu_place(self->Place())) {
                return self;
              } else {
-               auto new_var = self->NewVarBase(platform::CPUPlace(), true);
+               auto new_var = self->NewVarBase(platform::CPUPlace(), blocking);
                new_var->SetOverridedStopGradient(self->OverridedStopGradient());
                return new_var;
              }
-           },
+           }, py::arg("blocking") = true,
            R"DOC(
         Returns a copy of this Tensor in CPU memory.
 
@@ -1738,7 +1738,7 @@ void BindImperative(py::module *m_ptr) {
 
               )DOC")
       .def("pin_memory",
-           [](const std::shared_ptr<imperative::VarBase> &self) {
+           [](const std::shared_ptr<imperative::VarBase> &self, bool blocking) {
 #if !defined(PADDLE_WITH_CUDA) && !defined(PADDLE_WITH_HIP)
              PADDLE_THROW(platform::errors::PermissionDenied(
                  "Cannot copy this Tensor to pinned memory in CPU version "
@@ -1749,11 +1749,11 @@ void BindImperative(py::module *m_ptr) {
                return self;
              } else {
                auto new_var =
-                   self->NewVarBase(platform::CUDAPinnedPlace(), true);
+                   self->NewVarBase(platform::CUDAPinnedPlace(), blocking);
                new_var->SetOverridedStopGradient(self->OverridedStopGradient());
                return new_var;
              }
-           },
+           }, py::arg("blocking") = true,
            R"DOC(
         Returns a copy of this Tensor in pin memory.
 
@@ -1769,6 +1769,19 @@ void BindImperative(py::module *m_ptr) {
               y = x.pin_memory()
               print(y.place)      # CUDAPinnedPlace
 
+      )DOC")
+      .def("wait_for_blocking",
+           [](const std::shared_ptr<imperative::VarBase> &self) {
+             if (platform::is_cuda_pinned_place(self->Place()) ||
+                 platform::is_cpu_place(self->Place()) ||
+                 platform::is_gpu_place(self->Place())) {
+               self->WaitForBlocking(self->Place());
+             } else {
+               PADDLE_THROW(platform::errors::PermissionDenied("not supported"));
+             }
+           },
+           R"DOC(
+        Wait For Pin Memory
       )DOC")
       .def("cuda",
            [](const std::shared_ptr<imperative::VarBase> &self,
