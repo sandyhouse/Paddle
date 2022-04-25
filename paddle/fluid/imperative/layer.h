@@ -228,6 +228,8 @@ class VarBase {
   void _GradientSetEmpty(bool is_empty = true);
   bool _IsGradientSetEmpty();
 
+  void WaitForBlocking(const platform::Place& dst_place) const;
+
   std::shared_ptr<VarBase> NewVarBase(const platform::Place& dst_place,
                                       const bool blocking) const;
 

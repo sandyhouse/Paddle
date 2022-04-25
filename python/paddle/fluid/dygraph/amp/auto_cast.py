@@ -133,7 +133,8 @@ def pure_fp16_initialize(models):
             if (layer._dtype is 'float16') or isinstance(
                     layer, (paddle.nn.BatchNorm, paddle.nn.BatchNorm1D,
                             paddle.nn.BatchNorm2D, paddle.nn.BatchNorm3D,
-                            paddle.nn.LayerNorm)):
+                            paddle.nn.LayerNorm,
+                            paddle.incubate.nn.FusedMultiHeadAttention)):
                 continue
             layer._to_impl(dtype='float16', include_sublayers=False)
     return models
