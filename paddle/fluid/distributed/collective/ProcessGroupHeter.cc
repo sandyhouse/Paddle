@@ -25,9 +25,9 @@ namespace paddle {
 namespace distributed {
 
 using Place = paddle::platform::Place;
-
 int ProcessGroupHeter::send_count = 0;
 int ProcessGroupHeter::recv_count = 0;
+
 std::shared_ptr<ProcessGroupHeter::HeterTask> ProcessGroupHeter::CreateTask(
     int rank, CommType comm_type, const std::vector<phi::DenseTensor>& inputs) {
   return std::make_shared<ProcessGroupHeter::HeterTask>(rank, comm_type,
@@ -275,9 +275,9 @@ std::shared_ptr<ProcessGroup::Task> ProcessGroupHeter::Send(
                         "Gloo does not support the send operation."));
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> diff = end - start;
-  std::cout << "Time to copy tensor of dims(" << cpu_tensor.dims()
-            << ") from gpu to cpu for send " << std::setw(9)
-            << " is: " << diff.count() << " s" << std::endl;
+  VLOG(2) << "Time to copy tensor of dims(" << cpu_tensor.dims()
+          << ") from gpu to cpu for send " << std::setw(9)
+          << " is: " << diff.count() << " s" << std::endl;
 
   // Send to switch
   HeterClient* client_ =
@@ -286,20 +286,10 @@ std::shared_ptr<ProcessGroup::Task> ProcessGroupHeter::Send(
       cpu_tensor.numel() * framework::DataTypeSize(cpu_tensor.dtype());
   std::vector<int64_t> send_size;
   send_size.push_back(tensor_size);
-  // std::string file_name = std::string("send_") + std::to_string(gid_) +
-  //                         std::string("_") + std::to_string(send_count);
-  // file_name = std::string("/workspace/paddle_abnet/send_20_34");
-  // FILE* fp = fopen(file_name.c_str(), "wb");
-  // fwrite(cpu_tensor.data(), framework::DataTypeSize(cpu_tensor.dtype()),
-  // cpu_tensor.numel(), fp);
-  // fclose(fp);
   auto id = src_rank_ * 10000 + dst_rank_;
   std::string tensor_name = std::to_string(gid_) + "_id_" + std::to_string(id) +
                             std::string("_") + std::to_string(send_count++);
-  std::cout << "tensor_name:" << tensor_name << std::endl;
-  struct timeval _now;
-  gettimeofday(&_now, NULL);
-  std::cout << "Send time: " << _now.tv_sec << ":" << _now.tv_usec << std::endl;
+  VLOG(2) << "tensor_name:" << tensor_name;
   int ret = client_->Send(gid_, {tensor_name}, send_size, cpu_tensor.data(),
                           tensor_size);
   PADDLE_ENFORCE_EQ(ret, 0, platform::errors::PreconditionNotMet(
@@ -333,14 +323,10 @@ std::shared_ptr<ProcessGroup::Task> ProcessGroupHeter::Recv(
   // recv from switch
   HeterClient* client_ =
       HeterClient::GetInstance({switch_endpoint_}, {}, 0).get();
-  std::vector<int> recv_size;
-  recv_size.push_back(cpu_tensor.numel());
-  std::string file_name = std::string("recv_") + std::to_string(gid_) +
-                          std::string("_") + std::to_string(recv_count);
   auto id = src_rank_ * 10000 + dst_rank_;
   std::string tensor_name = std::to_string(gid_) + "_id_" + std::to_string(id) +
                             std::string("_") + std::to_string(recv_count++);
-  std::cout << "tensor_name: " << tensor_name << std::endl;
+  VLOG(2) << "tensor_name: " << tensor_name;
   auto start = std::chrono::high_resolution_clock::now();
   int ret = client_->Recv(
       gid_, {tensor_name}, cpu_tensor.data(),
@@ -351,32 +337,14 @@ std::shared_ptr<ProcessGroup::Task> ProcessGroupHeter::Recv(
   std::chrono::duration<double> diff = end - start;
   double goodput = cpu_tensor.numel() *
                    framework::DataTypeSize(cpu_tensor.dtype()) / diff.count();
-  std::cout << "Goodput: " << goodput << "B/s" << std::endl;
-  // struct timeval _now;
-  // gettimeofday(&_now, NULL);
-  // std::cout << "Recv time: " << _now.tv_sec << ":" << _now.tv_usec <<
-  // std::endl;
-  // FILE* fp = fopen(file_name.c_str(), "wb");
-  // fwrite(cpu_tensor.data(), framework::DataTypeSize(cpu_tensor.dtype()),
-  // cpu_tensor.numel(), fp);
-  // fclose(fp);
+  VLOG(2) << "Goodput: " << goodput << "B/s" << std::endl;
   start = std::chrono::high_resolution_clock::now();
   framework::TensorCopySync(cpu_tensor, gpu_tensor.place(), &gpu_tensor);
   end = std::chrono::high_resolution_clock::now();
   diff = end - start;
-  std::cout << "Time to copy tensor of dims(" << cpu_tensor.dims()
-            << ") from gpu to cpu for recv " << std::setw(9)
-            << " is: " << diff.count() << " s" << std::endl;
-  // VLOG(0) << "In heter:" << gpu_tensor.data()
-  //         << ", cpu numel: " << cpu_tensor.numel()
-  //         << ", gpu numel: " << gpu_tensor.numel();
-  // phi::DenseTensor cpu_tensor2;
-  // framework::TensorCopySync(gpu_tensor, platform::CPUPlace(), &cpu_tensor2);
-  // file_name += std::string("_bak");
-  // fp = fopen(file_name.c_str(), "wb");
-  // fwrite(cpu_tensor2.data(), framework::DataTypeSize(cpu_tensor2.dtype()),
-  // cpu_tensor2.numel(), fp);
-  // fclose(fp);
+  VLOG(2) << "Time to copy tensor of dims(" << cpu_tensor.dims()
+          << ") from gpu to cpu for recv " << std::setw(9)
+          << " is: " << diff.count() << " s" << std::endl;
   return CreateTask(rank_, CommType::RECV, out_tensors);
 }
 

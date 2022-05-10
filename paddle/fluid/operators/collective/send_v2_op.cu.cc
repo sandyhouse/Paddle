@@ -18,7 +18,6 @@ limitations under the License. */
 #include "paddle/fluid/platform/collective_helper.h"
 #include "paddle/fluid/platform/device/gpu/nccl_helper.h"
 #endif
-
 #include "paddle/fluid/distributed/collective/ProcessGroup.h"
 #include "paddle/phi/api/include/tensor.h"
 
@@ -32,7 +31,6 @@ class SendOpV2CUDAKernel : public framework::OpKernel<T> {
 #if (defined(PADDLE_WITH_RCCL) || defined(PADDLE_WITH_NCCL)) && \
     NCCL_VERSION_CODE >= 2703
     int rid = ctx.Attr<int>("ring_id");
-    auto* x_var = ctx.InputVar("X");
     PADDLE_ENFORCE_GE(
         rid, 0,
         platform::errors::InvalidArgument(
@@ -49,13 +47,10 @@ class SendOpV2CUDAKernel : public framework::OpKernel<T> {
       distributed::ProcessGroup* pg = map->get(rid);
       std::vector<phi::DenseTensor> in_tensor;
       auto x = ctx.Input<framework::LoDTensor>("X");
-      // VLOG(0) << "send name:" << x->name() << ", send_ptr:" << x->data();
       in_tensor.push_back(*x);
       auto task = pg->Send(in_tensor, peer);
-      // task->Wait();
       return;
     }
-
     gpuStream_t stream = nullptr;
     auto place = ctx.GetPlace();
     auto comm = platform::NCCLCommContext::Instance().Get(rid, place);
@@ -71,6 +66,7 @@ class SendOpV2CUDAKernel : public framework::OpKernel<T> {
                                           "be less than comm->nranks (%d).",
                                           peer, comm->nranks()));
 
+    auto* x_var = ctx.InputVar("X");
     if (x_var->IsType<framework::LoDTensorArray>()) {
       auto& x_array = x_var->Get<framework::LoDTensorArray>();
       for (size_t idx = 0; idx < x_array.size(); idx++) {
@@ -113,4 +109,5 @@ REGISTER_OP_CUDA_KERNEL(send_v2, ops::SendOpV2CUDAKernel<float>,
                         ops::SendOpV2CUDAKernel<double>,
                         ops::SendOpV2CUDAKernel<int>,
                         ops::SendOpV2CUDAKernel<int64_t>,
+                        ops::SendOpV2CUDAKernel<int8_t>,
                         ops::SendOpV2CUDAKernel<plat::float16>);

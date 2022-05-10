@@ -18,6 +18,7 @@ limitations under the License. */
 #include "paddle/fluid/platform/collective_helper.h"
 #include "paddle/fluid/platform/device/gpu/nccl_helper.h"
 #endif
+
 #include "paddle/fluid/distributed/collective/ProcessGroup.h"
 #include "paddle/phi/api/include/tensor.h"
 
@@ -55,9 +56,7 @@ class RecvOpV2CUDAKernel : public framework::OpKernel<T> {
       out->mutable_data<T>(out_dims, place);
 
       out_tensor.emplace_back(*out);
-      // VLOG(0) << "in_recv:" << out->data();
       auto task = pg->Recv(out_tensor, peer);
-      // task->Wait();
       return;
     }
     auto comm = platform::NCCLCommContext::Instance().Get(rid, place);
@@ -123,4 +122,5 @@ REGISTER_OP_CUDA_KERNEL(recv_v2, ops::RecvOpV2CUDAKernel<float>,
                         ops::RecvOpV2CUDAKernel<double>,
                         ops::RecvOpV2CUDAKernel<int>,
                         ops::RecvOpV2CUDAKernel<int64_t>,
+                        ops::RecvOpV2CUDAKernel<int8_t>,
                         ops::RecvOpV2CUDAKernel<plat::float16>);

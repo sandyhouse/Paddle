@@ -132,7 +132,6 @@ endif()
 if (NOT WIN32)
 set(COMMON_FLAGS
     -fPIC
-    -faligned-new
     -fno-omit-frame-pointer
     -Werror
     -Wall
@@ -157,6 +156,10 @@ if(WITH_IPU)
         -Wno-sign-compare # Warnings in Popart
         -Wno-non-virtual-dtor # Warnings in Popart
     )
+endif()
+
+if(WITH_ASCEND_CL AND WITH_ARM_BRPC)
+    set(COMMON_FLAGS ${COMMON_FLAGS} -faligned-new)
 endif()
 
 if(NOT APPLE)
