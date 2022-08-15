@@ -1,11 +1,11 @@
 # Copyright (c) 2022 PaddlePaddle Authors. All Rights Reserved.
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# 
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -21,16 +21,16 @@ def group_case_for_parallel(rootPath):
 
     #wget file
     for filename in [
-            'nightly_tests', 'single_card_tests', 'single_card_tests_mem0',
+            'nightly_case', 'single_card_tests', 'single_card_tests_mem0',
             'multiple_card_tests', 'multiple_card_tests_mem0',
             'exclusive_card_tests', 'exclusive_card_tests_mem0'
     ]:
         os.system(
-            'cd %s/tools && wget --no-proxy https://paddle-docker-tar.bj.bcebos.com/pre_test/%s --no-check-certificate'
+            'cd %s/tools && wget --no-proxy https://paddle-docker-tar.bj.bcebos.com/pre_test_bak/%s --no-check-certificate'
             % (rootPath, filename))
 
     #get nightly tests
-    nightly_tests_file = open('%s/tools/nightly_tests' % rootPath, 'r')
+    nightly_tests_file = open('%s/tools/nightly_case' % rootPath, 'r')
     nightly_tests = nightly_tests_file.read().strip().split('\n')
     nightly_tests_file.close()
 

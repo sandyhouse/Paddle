@@ -14,6 +14,7 @@
 
 #pragma once
 #include <memory>
+
 #include "paddle/fluid/memory/allocation/allocator.h"
 #ifdef PADDLE_WITH_ASCEND_CL
 #include "paddle/fluid/memory/allocation/npu_pinned_allocator.h"
@@ -70,7 +71,8 @@ class AllocatorFacade {
                                           size_t size,
                                           const phi::Stream& stream);
 
-  AllocationPtr Alloc(const platform::Place& place, size_t size,
+  AllocationPtr Alloc(const platform::Place& place,
+                      size_t size,
                       const phi::Stream& stream);
 
   bool InSameStream(const std::shared_ptr<Allocation>& allocation,

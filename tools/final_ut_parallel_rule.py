@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (c) 2022 PaddlePaddle Authors. All Rights Reserved.
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# 
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -60,7 +60,7 @@ def classify_cases_by_mem(rootPath):
         'test_parallel_dygraph_sync_batch_norm',
         'test_conv3d_op',
         'test_quant2_int8_resnet50_range_mkldnn',
-    ]  # always timeout 
+    ]  # always timeout
 
     f = open(case_filename)
     lines = f.readlines()
@@ -85,6 +85,9 @@ def classify_cases_by_mem(rootPath):
                 case = case.replace('^', '').replace('$', '').strip()
                 all_tests_by_card['exclusive_card_tests'].append(case)
 
+    if not os.path.exists("/pre_test"):
+        os.mkdir("/pre_test")
+
     with open("/pre_test/classify_case_by_cardNum.json", "w") as f:
         json.dump(all_tests_by_card, f)
 
@@ -99,6 +102,8 @@ def classify_cases_by_mem(rootPath):
                 continue
             if case in case_always_timeout:
                 no_parallel_case = no_parallel_case + '|^' + case + '$'
+                continue
+
             if case not in new_lastest_mem:
                 continue
 
@@ -118,7 +123,7 @@ def classify_cases_by_mem(rootPath):
         mem_1_sum = 0
         with open('/pre_test/%s' % cardType, 'w') as f_not_0:
             for index in case_mem_1_sort:
-                if mem_1_sum < 16 * 1024 * 2:
+                if mem_1_sum < 14 * 1024 * 2:
                     mem_1_sum += index[1]
                     case_mem_1_line = case_mem_1_line + '|^' + index[0] + '$'
                 else:

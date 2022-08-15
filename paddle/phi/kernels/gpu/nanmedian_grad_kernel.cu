@@ -74,9 +74,9 @@ void CalcMedianGradKernel(const Context& dev_ctx,
   int64_t pre_dim = numel / stride;
 
   T div_factor = static_cast<T>(2.0);
-  KernelNanmedianGrad<
-      T><<<GET_BLOCKS(pre_dim), PADDLE_CUDA_NUM_THREADS, 0, stream>>>(
-      x_ptr, m_ptr, out_grad_ptr, x_grad_ptr, stride, pre_dim, div_factor);
+  KernelNanmedianGrad<T>
+      <<<GET_BLOCKS(pre_dim), PADDLE_CUDA_NUM_THREADS, 0, stream>>>(
+          x_ptr, m_ptr, out_grad_ptr, x_grad_ptr, stride, pre_dim, div_factor);
 }
 
 template <typename T, typename Context>

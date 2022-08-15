@@ -1,11 +1,11 @@
 # Copyright (c) 2022 PaddlePaddle Authors. All Rights Reserved.
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# 
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -66,6 +66,7 @@ def matmul_grad(x, y, bias, dz, trans_x, trans_y):
     not is_fused_matmul_bias_supported(),
     "fused_gemm_epilogue is only supported when CUDA version >= 11.6")
 class TestFusedMatmulBias(unittest.TestCase):
+
     def setUp(self):
         paddle.set_device('gpu')
 
@@ -96,19 +97,19 @@ class TestFusedMatmulBias(unittest.TestCase):
 
         z = fused_matmul_bias(x, y, bias, trans_x, trans_y)
         z_np = matmul(x_np, y_np, bias_np, trans_x, trans_y)
-        self.assertTrue(np.array_equal(z.numpy(), z_np))
+        np.testing.assert_array_equal(z.numpy(), z_np)
 
         z_grad_np = self.rand_data(z_np.shape, dtype)
         paddle.autograd.backward(z, grad_tensors=[paddle.to_tensor(z_grad_np)])
 
         x_grad_np, y_grad_np, bias_grad_np = matmul_grad(
             x_np, y_np, bias_np, z_grad_np, trans_x, trans_y)
-        self.assertTrue(np.array_equal(x.grad.numpy(), x_grad_np))
+        np.testing.assert_array_equal(x.grad.numpy(), x_grad_np)
         self.assertEqual(y_grad_np.shape, y_np.shape)
-        self.assertTrue(np.array_equal(y.grad.numpy(), y_grad_np))
+        np.testing.assert_array_equal(y.grad.numpy(), y_grad_np)
 
         if need_bias:
-            self.assertTrue(np.array_equal(bias.grad.numpy(), bias_grad_np))
+            np.testing.assert_array_equal(bias.grad.numpy(), bias_grad_np)
         else:
             self.assertTrue(bias_grad_np is None)
 
@@ -131,12 +132,13 @@ class TestFusedMatmulBias(unittest.TestCase):
     not is_fused_matmul_bias_supported(),
     "fused_gemm_epilogue is only supported when CUDA version >= 11.6")
 class TestFusedLinear(unittest.TestCase):
+
     def check_fused_linear(self, transpose):
         x = paddle.randn([30, 40])
         linear = FusedLinear(40, 50, transpose_weight=transpose)
         y1 = linear(x)
         y2 = fused_linear(x, linear.weight, linear.bias, transpose)
-        self.assertTrue(np.array_equal(y1.numpy(), y2.numpy()))
+        np.testing.assert_array_equal(y1.numpy(), y2.numpy())
 
     def test_non_transpose(self):
         self.check_fused_linear(False)
@@ -149,6 +151,7 @@ class TestFusedLinear(unittest.TestCase):
     not is_fused_matmul_bias_supported(),
     "fused_gemm_epilogue is only supported when CUDA version >= 11.6")
 class TestStaticGraph(unittest.TestCase):
+
     def test_static_graph(self):
         paddle.enable_static()
         x = paddle.static.data(name='x', dtype='float32', shape=[-1, 100])

@@ -15,7 +15,6 @@ limitations under the License. */
 
 #include "paddle/fluid/framework/op_info.h"
 #include "paddle/fluid/framework/op_registry.h"
-
 #include "paddle/fluid/framework/threadpool.h"
 #include "paddle/fluid/platform/collective_helper.h"
 
@@ -53,9 +52,9 @@ class CCommInitAllOp : public framework::OperatorBase {
 
   void RunImpl(const framework::Scope& scope,
                const platform::Place& place) const override {
-// PADDLE_ENFORCE_EQ(platform::is_gpu_place(place), true,
-//                   platform::errors::PreconditionNotMet(
-//                       "CCommInitAllOp can run on gpu place only"));
+    // PADDLE_ENFORCE_EQ(platform::is_gpu_place(place), true,
+    //                   platform::errors::PreconditionNotMet(
+    //                       "CCommInitAllOp can run on gpu place only"));
 
 #if defined(PADDLE_WITH_NCCL) || defined(PADDLE_WITH_RCCL)
     std::vector<int> devices = Attr<std::vector<int>>("devices");
@@ -91,8 +90,11 @@ class CCommInitAllOp : public framework::OperatorBase {
 
       for (size_t i = 0; i < devices.size(); ++i) {
         platform::BKCLCommContext::Instance().AssignBKCLComm(
-            ptr->contexts_.at(devices[i]).comm_, devices.size(), devices[i],
-            devices[i], ring_id);
+            ptr->contexts_.at(devices[i]).comm_,
+            devices.size(),
+            devices[i],
+            devices[i],
+            ring_id);
 
         VLOG(0) << "bkcl communicator of rank " << devices[i] << " in ring "
                 << ring_id << " has been created on device " << devices[i];
@@ -138,5 +140,7 @@ Initialize all collective communicatoin context
 
 namespace ops = paddle::operators;
 
-REGISTER_OPERATOR(c_comm_init_all, ops::CCommInitAllOp,
-                  ops::CCommInitAllInferShape, ops::CCommInitAllOpMaker);
+REGISTER_OPERATOR(c_comm_init_all,
+                  ops::CCommInitAllOp,
+                  ops::CCommInitAllInferShape,
+                  ops::CCommInitAllOpMaker);
